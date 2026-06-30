@@ -7,6 +7,8 @@ import subprocess
 import sys
 from datetime import date
 
+DOWNLOADED_MUSIC_FOLDER_NAME = "Downloaded Musics"
+
 
 def crop_to_square(image):
     width, height = image.size
@@ -161,24 +163,65 @@ def find_ffmpeg():
     return None
 
 
-def build_library_index(script_directory):
+def list_downloaded_music_folders(library_directory):
+    downloaded_music_directory = os.path.join(library_directory, DOWNLOADED_MUSIC_FOLDER_NAME)
+
+    if not os.path.isdir(downloaded_music_directory):
+        return downloaded_music_directory, []
+
+    folders = sorted(d.name for d in os.scandir(downloaded_music_directory) if d.is_dir())
+
+    return downloaded_music_directory, folders
+
+
+def select_duplicate_scan_folders(library_directory):
+    downloaded_music_directory, folders = list_downloaded_music_folders(library_directory)
+
+    if not folders:
+        print(f"[WARNING] No folders found in {downloaded_music_directory}")
+        return []
+
+    print("\nFolders available for duplicate scan:\n")
+    print("  1. all")
+
+    for index, folder_name in enumerate(folders, start=2):
+        print(f"  {index}. {folder_name}")
+
+    selection = input("\nSelect folders (e.g. 1,3,4): ").strip().lower()
+
+    selected_indexes = set()
+
+    for part in selection.split(","):
+        part = part.strip()
+
+        if part.isdigit():
+            selected_indexes.add(int(part))
+
+    if 1 in selected_indexes:
+        return [os.path.join(downloaded_music_directory, name) for name in folders]
+
+    selected_paths = []
+
+    for index in sorted(selected_indexes):
+        folder_index = index - 2
+
+        if 0 <= folder_index < len(folders):
+            selected_paths.append(os.path.join(downloaded_music_directory, folders[folder_index]))
+
+    return selected_paths
+
+
+def build_library_index(selected_folders):
     from mutagen.mp3 import MP3
 
-    library_directory = get_library_directory(script_directory)
-    current_directory_name = os.path.basename(script_directory)
     downloaded_videos = {}
 
     print("\n[Library] Building in-memory index...\n")
 
-    for directory in os.scandir(library_directory):
-        if not directory.is_dir():
-            continue
-        if directory.name == current_directory_name:
-            continue
+    for folder_path in selected_folders:
+        print(f"  Scanning: {os.path.basename(folder_path)}")
 
-        print(f"  Scanning: {directory.name}")
-
-        for root, _, files in os.walk(directory.path):
+        for root, _, files in os.walk(folder_path):
             for file_name in files:
                 if not file_name.lower().endswith(".mp3"):
                     continue
@@ -285,7 +328,7 @@ def filter_pending_videos(videos, downloaded_videos):
 def download_video(video, output_directory, output_template, script_directory, ffmpeg_path):
     output_path = os.path.join(output_directory, output_template)
     script_path = os.path.abspath(__file__)
-    post_download_command = f'{sys.executable} "{script_path}" --fix-file "%(filepath)s" "%(id)s"'
+    post_download_command = f'{sys.executable} "{script_path}" --fix-file %(filepath)q %(id)q'
 
     command = [
         sys.executable, "-m", "yt_dlp",
@@ -320,7 +363,14 @@ def process_download():
         input("\nPress Enter to exit...")
         sys.exit(1)
 
-    downloaded_videos = build_library_index(script_directory)
+    scan_duplicates = input("Scan for duplicates? (y/n): ").strip().lower() == "y"
+
+    if scan_duplicates:
+        library_directory = get_library_directory(script_directory)
+        selected_folders = select_duplicate_scan_folders(library_directory)
+        downloaded_videos = build_library_index(selected_folders)
+    else:
+        downloaded_videos = {}
 
     while True:
         print()
