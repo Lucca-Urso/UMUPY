@@ -254,7 +254,15 @@ def build_library_index(selected_folders):
 
 def detect_playlist(url, script_directory):
     process_result = subprocess.run(
-        [sys.executable, "-m", "yt_dlp", "--flat-playlist", "--print", "%(playlist_title)s", "--playlist-items", "1", "--no-warnings", url],
+        [
+            sys.executable, "-m", "yt_dlp",
+            "--flat-playlist",
+            "--extractor-args", "youtubetab:skip=webpage",
+            "--print", "%(playlist_title)s",
+            "--playlist-items", "1",
+            "--no-warnings",
+            url,
+        ],
         capture_output=True, text=True, cwd=script_directory,
     )
 
@@ -285,9 +293,18 @@ def resolve_output_directory(url, script_directory):
     return output_directory, "%(title)s.%(ext)s"
 
 
-def extract_videos(url, script_directory):
+def extract_videos_chunk(url, script_directory, start_index, end_index):
     process_result = subprocess.run(
-        [sys.executable, "-m", "yt_dlp", "--flat-playlist", "--dump-json", "--no-warnings", url],
+        [
+            sys.executable, "-m", "yt_dlp",
+            "--flat-playlist",
+            "--extractor-args", "youtubetab:skip=webpage",
+            "--playlist-start", str(start_index),
+            "--playlist-end", str(end_index),
+            "--dump-json",
+            "--no-warnings",
+            url,
+        ],
         capture_output=True, text=True, cwd=script_directory,
     )
 
@@ -306,6 +323,36 @@ def extract_videos(url, script_directory):
             continue
 
     return videos
+
+
+def extract_videos(url, script_directory):
+    chunk_size = 100
+    all_videos = []
+    seen_ids = set()
+    start_index = 1
+
+    while True:
+        end_index = start_index + chunk_size - 1
+
+        print(f"  Fetching items {start_index}-{end_index}...")
+
+        chunk = extract_videos_chunk(url, script_directory, start_index, end_index)
+
+        new_videos = [v for v in chunk if v["id"] not in seen_ids]
+
+        if not new_videos:
+            break
+
+        for video in new_videos:
+            seen_ids.add(video["id"])
+            all_videos.append(video)
+
+        if len(chunk) < chunk_size:
+            break
+
+        start_index += chunk_size
+
+    return all_videos
 
 
 def filter_pending_videos(videos, downloaded_videos):
