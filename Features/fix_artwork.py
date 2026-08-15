@@ -62,7 +62,7 @@ def find_thumbnail(audio_base_name, thumbnail_index):
     return None
 
 
-def embed_metadata(audio_path, image_data, youtube_video_id=None):
+def embed_metadata(audio_path, image_data, youtube_video_id=None, spotify_track_id=None):
     from mutagen.id3 import APIC, TXXX
     from mutagen.mp3 import MP3
 
@@ -73,15 +73,19 @@ def embed_metadata(audio_path, image_data, youtube_video_id=None):
 
     audio_file.tags.delall("APIC")
     audio_file.tags.delall("TXXX:YOUTUBE_ID")
+    audio_file.tags.delall("TXXX:SPOTIFY_ID")
     audio_file.tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="", data=image_data))
 
     if youtube_video_id:
         audio_file.tags.add(TXXX(encoding=3, desc="YOUTUBE_ID", text=[youtube_video_id]))
 
+    if spotify_track_id:
+        audio_file.tags.add(TXXX(encoding=3, desc="SPOTIFY_ID", text=[spotify_track_id]))
+
     audio_file.save(v2_version=3)
 
 
-def fix_audio_artwork(audio_path, youtube_video_id=None):
+def fix_audio_artwork(audio_path, youtube_video_id=None, spotify_track_id=None):
     from mutagen.mp3 import MP3
     from PIL import Image
 
@@ -103,7 +107,7 @@ def fix_audio_artwork(audio_path, youtube_video_id=None):
             print(f"Thumbnail found: {os.path.basename(thumbnail_path)}")
 
             processed_image = process_thumbnail(Image.open(thumbnail_path))
-            embed_metadata(audio_path, processed_image.getvalue(), youtube_video_id)
+            embed_metadata(audio_path, processed_image.getvalue(), youtube_video_id, spotify_track_id)
 
             try:
                 os.remove(thumbnail_path)
@@ -121,7 +125,7 @@ def fix_audio_artwork(audio_path, youtube_video_id=None):
                 return
 
             processed_image = process_thumbnail(Image.open(io.BytesIO(artwork_list[0].data)))
-            embed_metadata(audio_path, processed_image.getvalue(), youtube_video_id)
+            embed_metadata(audio_path, processed_image.getvalue(), youtube_video_id, spotify_track_id)
 
             print("[OK] Artwork rebuilt from existing APIC.")
 
@@ -130,12 +134,14 @@ def fix_audio_artwork(audio_path, youtube_video_id=None):
 
 
 def main():
-    if len(sys.argv) == 3:
+    if len(sys.argv) == 4:
+        fix_audio_artwork(sys.argv[1], sys.argv[2], sys.argv[3])
+    elif len(sys.argv) == 3:
         fix_audio_artwork(sys.argv[1], sys.argv[2])
     elif len(sys.argv) == 2:
         fix_audio_artwork(sys.argv[1])
     else:
-        print("Usage: python fix_artwork.py <audio_path> [youtube_video_id]")
+        print("Usage: python fix_artwork.py <audio_path> [youtube_video_id] [spotify_track_id]")
         sys.exit(1)
 
 

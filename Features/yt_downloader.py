@@ -258,6 +258,9 @@ def download_video(video, output_directory, output_template, script_directory, f
     fix_artwork_script = get_fix_artwork_script()
     post_download_command = f'{sys.executable} "{fix_artwork_script}" %(filepath)q %(id)q'
 
+    if video.get("spotify_id"):
+        post_download_command += f' {video["spotify_id"]}'
+
     images_before = list_image_files(output_directory)
 
     command = [

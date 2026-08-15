@@ -2,6 +2,7 @@ Dependencies/ffmpeg*
 Dependencies/ffprobe*
 Dependencies/*cookies*.txt
 Dependencies/spotify_credentials.json
+Dependencies/.spotify_token_cache
 History/*
 !History/.gitkeep
 Downloads/*

@@ -12,7 +12,9 @@ Supports **Windows** and **macOS**.
 UMUPY/
 ├── Features/                    Backend scripts (one per feature)
 │   ├── yt_downloader.py         Download YouTube videos/playlists as MP3
-│   └── fix_artwork.py           Embed square 800x800 artwork + tags into MP3s
+│   ├── fix_artwork.py           Embed square 800x800 artwork + tags into MP3s
+│   ├── rekordbox_playlist_creator.py  Create RekordBox playlists from .txt/.xml
+│   └── spotify_converter.py     Convert Spotify playlists to YouTube downloads
 ├── Dependencies/                External binaries and credentials (not versioned)
 │   ├── ffmpeg.exe               FFmpeg binary (Windows fallback)
 │   ├── ffprobe.exe              FFprobe binary (Windows fallback)
@@ -38,6 +40,27 @@ For **FFmpeg**, either install it globally so it is available on your system PAT
 ## YouTube Cookies
 
 YouTube requires authentication to access age-restricted content and avoid rate limiting. Export your browser cookies using an extension such as **Get cookies.txt LOCALLY** and place the resulting file inside `Dependencies/`. Prefer a throwaway Google account for this.
+
+## Spotify Converter
+
+`spotify_converter.py` reads a Spotify playlist through the official Web API, finds the best YouTube equivalent for each track (fuzzy matching on title, artist and duration) and downloads everything through the regular download pipeline, embedding both `YOUTUBE_ID` and `SPOTIFY_ID` tags.
+
+Setup (one time):
+
+1. Create a free app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) with redirect URI `http://127.0.0.1:8888/callback`
+2. Save `Dependencies/spotify_credentials.json`:
+
+```json
+{"client_id": "...", "client_secret": "...", "redirect_uri": "http://127.0.0.1:8888/callback"}
+```
+
+Then run:
+
+```bash
+python3 Features/spotify_converter.py [playlist_url]
+```
+
+The first run opens the browser once for Spotify login; the token is cached afterwards.
 
 ## Running the Downloader (CLI)
 
