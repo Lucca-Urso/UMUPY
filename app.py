@@ -175,7 +175,7 @@ class UmupyApi:
 
     def get_status(self):
         with self._lock:
-            return dict(self._status)
+            return {**self._status, "items": list(self._status["items"])}
 
     def open_output_directory(self):
         with self._lock:
@@ -279,7 +279,11 @@ class UmupyApi:
 
     def get_spotify_status(self):
         with self._lock:
-            return dict(self._spotify_status)
+            return {
+                **self._spotify_status,
+                "matched": list(self._spotify_status["matched"]),
+                "unmatched": list(self._spotify_status["unmatched"]),
+            }
 
     def rekordbox_select_source(self, mode):
         import webview
@@ -305,6 +309,12 @@ class UmupyApi:
 
         if not playlists:
             return {"error": "No playlists found in the selected source."}
+
+        if self._rekordbox is not None:
+            try:
+                self._rekordbox["db"].close()
+            except Exception:
+                pass
 
         db = rpc.open_database()
         collection = list(db.get_content())
@@ -461,7 +471,11 @@ class UmupyApi:
 
     def get_sync_status(self):
         with self._lock:
-            return dict(self._sync_status)
+            return {
+                **self._sync_status,
+                "orphans": list(self._sync_status["orphans"]),
+                "missing": list(self._sync_status["missing"]),
+            }
 
     def sync_delete(self, paths):
         import sync_playlists
