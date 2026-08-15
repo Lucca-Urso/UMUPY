@@ -1,4 +1,3 @@
-import io
 import json
 import os
 import platform
@@ -10,138 +9,24 @@ from datetime import date
 DOWNLOADED_MUSIC_FOLDER_NAME = "Downloaded Musics"
 
 
-def crop_to_square(image):
-    width, height = image.size
-    side = min(width, height)
-    left = (width - side) // 2
-    top = (height - side) // 2
-    return image.crop((left, top, left + side, top + side))
-
-
-def process_thumbnail(image):
-    from PIL import Image
-
-    if image.mode in ("RGBA", "P", "LA"):
-        image = image.convert("RGB")
-
-    image = crop_to_square(image)
-    image = image.resize((800, 800), Image.LANCZOS)
-    output = io.BytesIO()
-    image.save(output, format="JPEG", quality=90, dpi=(300, 300))
-    return output
-
-
-def build_thumbnail_index(directory):
-    image_extensions = {".jpg", ".jpeg", ".png", ".webp"}
-    thumbnails = {}
-
-    for file_name in os.listdir(directory):
-        file_base_name, extension = os.path.splitext(file_name)
-        if extension.lower() in image_extensions:
-            thumbnails[file_base_name.lower()] = os.path.join(directory, file_name)
-
-    return thumbnails
-
-
-def find_thumbnail(audio_base_name, thumbnail_index):
-    import difflib
-    import re
-
-    normalized_name = audio_base_name.lower()
-
-    if normalized_name in thumbnail_index:
-        return thumbnail_index[normalized_name]
-
-    stripped_name = re.sub(r"^\d+\s*[-_.]\s*", "", normalized_name)
-
-    if stripped_name in thumbnail_index:
-        return thumbnail_index[stripped_name]
-
-    for thumbnail_name, thumbnail_path in thumbnail_index.items():
-        if re.sub(r"^\d+\s*[-_.]\s*", "", thumbnail_name) == normalized_name:
-            return thumbnail_path
-
-    similar_names = difflib.get_close_matches(normalized_name, thumbnail_index.keys(), n=1, cutoff=0.7)
-
-    if similar_names:
-        return thumbnail_index[similar_names[0]]
-
-    return None
-
-
-def embed_metadata(audio_path, image_data, youtube_video_id=None):
-    from mutagen.id3 import APIC, TXXX
-    from mutagen.mp3 import MP3
-
-    audio_file = MP3(audio_path)
-
-    if audio_file.tags is None:
-        audio_file.add_tags()
-
-    audio_file.tags.delall("APIC")
-    audio_file.tags.delall("TXXX:YOUTUBE_ID")
-    audio_file.tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="", data=image_data))
-
-    if youtube_video_id:
-        audio_file.tags.add(TXXX(encoding=3, desc="YOUTUBE_ID", text=[youtube_video_id]))
-
-    audio_file.save(v2_version=3)
-
-
-def fix_audio_artwork(audio_path, youtube_video_id=None):
-    from mutagen.mp3 import MP3
-    from PIL import Image
-
-    if not os.path.isfile(audio_path):
-        print(f"[ERROR] File not found: {audio_path}")
-        return
-
-    directory = os.path.dirname(audio_path)
-    file_name = os.path.basename(audio_path)
-    audio_base_name = os.path.splitext(file_name)[0]
-
-    print(f"\n[Artwork] {file_name}")
-
-    thumbnail_index = build_thumbnail_index(directory)
-    thumbnail_path = find_thumbnail(audio_base_name, thumbnail_index)
-
-    try:
-        if thumbnail_path:
-            print(f"Thumbnail found: {os.path.basename(thumbnail_path)}")
-
-            processed_image = process_thumbnail(Image.open(thumbnail_path))
-            embed_metadata(audio_path, processed_image.getvalue(), youtube_video_id)
-
-            try:
-                os.remove(thumbnail_path)
-            except OSError as error:
-                print(f"[WARNING] Could not remove thumbnail: {error}")
-
-            print("[OK] Artwork embedded.")
-
-        else:
-            audio_file = MP3(audio_path)
-            artwork_list = audio_file.tags.getall("APIC") if audio_file.tags else []
-
-            if not artwork_list:
-                print("[WARNING] No artwork found.")
-                return
-
-            processed_image = process_thumbnail(Image.open(io.BytesIO(artwork_list[0].data)))
-            embed_metadata(audio_path, processed_image.getvalue(), youtube_video_id)
-
-            print("[OK] Artwork rebuilt from existing APIC.")
-
-    except Exception as error:
-        print(f"[ERROR] Failed to process artwork: {error}")
-
-
 def get_script_directory():
     return os.path.dirname(os.path.abspath(__file__))
 
 
+def get_project_directory():
+    return os.path.dirname(get_script_directory())
+
+
+def get_dependencies_directory():
+    return os.path.join(get_project_directory(), "Dependencies")
+
+
 def get_library_directory(script_directory):
     return os.path.dirname(script_directory)
+
+
+def get_fix_artwork_script():
+    return os.path.join(get_script_directory(), "fix_artwork.py")
 
 
 def get_today():
@@ -155,7 +40,7 @@ def find_ffmpeg():
     if ffmpeg_path:
         return ffmpeg_path
 
-    local_ffmpeg_path = os.path.join(get_script_directory(), ffmpeg_binary)
+    local_ffmpeg_path = os.path.join(get_dependencies_directory(), ffmpeg_binary)
 
     if os.path.isfile(local_ffmpeg_path):
         return local_ffmpeg_path
@@ -374,8 +259,8 @@ def filter_pending_videos(videos, downloaded_videos):
 
 def download_video(video, output_directory, output_template, script_directory, ffmpeg_path):
     output_path = os.path.join(output_directory, output_template)
-    script_path = os.path.abspath(__file__)
-    post_download_command = f'{sys.executable} "{script_path}" --fix-file %(filepath)q %(id)q'
+    fix_artwork_script = get_fix_artwork_script()
+    post_download_command = f'{sys.executable} "{fix_artwork_script}" %(filepath)q %(id)q'
 
     command = [
         sys.executable, "-m", "yt_dlp",
@@ -406,7 +291,7 @@ def process_download():
 
     if not ffmpeg_path:
         print("[ERROR] FFmpeg not found.")
-        print("\nInstall FFmpeg globally or place it in the script directory.")
+        print("\nInstall FFmpeg globally or place it in the Dependencies directory.")
         input("\nPress Enter to exit...")
         sys.exit(1)
 
@@ -469,10 +354,6 @@ def process_download():
 
 
 def main():
-    if len(sys.argv) == 4 and sys.argv[1] == "--fix-file":
-        fix_audio_artwork(sys.argv[2], sys.argv[3])
-        return
-
     process_download()
 
 
