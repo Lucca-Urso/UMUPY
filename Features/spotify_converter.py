@@ -188,6 +188,8 @@ def convert_tracks(ytmusic, tracks):
 
 
 def download_videos(videos, playlist_name):
+    import history
+
     ffmpeg_path = yt_downloader.find_ffmpeg()
 
     if not ffmpeg_path:
@@ -202,6 +204,7 @@ def download_videos(videos, playlist_name):
     os.makedirs(output_directory, exist_ok=True)
     print(f"\nDestination: {output_directory}\n")
 
+    run_id = history.start_run("spotify_download", target=playlist_name, total=len(videos))
     failed_videos = []
 
     for video in videos:
@@ -214,7 +217,15 @@ def download_videos(videos, playlist_name):
         if return_code != 0:
             failed_videos.append(video)
 
+        history.log_item(
+            run_id,
+            video["title"],
+            "ok" if return_code == 0 else "failed",
+            detail=video.get("url"),
+        )
         print()
+
+    history.finish_run(run_id, "completed_with_errors" if failed_videos else "completed")
 
     downloaded_count = len(videos) - len(failed_videos)
     print(f"[OK] {downloaded_count}/{len(videos)} musics downloaded.")

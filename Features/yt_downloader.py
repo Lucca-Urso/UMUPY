@@ -298,7 +298,7 @@ def remove_residual_thumbnails(output_directory, images_before):
             print(f"[WARNING] Could not remove residual thumbnail: {error}")
 
 
-def download_video(video, output_directory, output_template, script_directory, ffmpeg_path):
+def download_video(video, output_directory, output_template, script_directory, ffmpeg_path, capture=False):
     output_path = os.path.join(output_directory, output_template)
     fix_artwork_script = get_fix_artwork_script()
     post_download_command = f'{sys.executable} "{fix_artwork_script}" %(filepath)q %(id)q'
@@ -331,12 +331,23 @@ def download_video(video, output_directory, output_template, script_directory, f
         video["url"],
     ]
 
-    return_code = subprocess.run(command, cwd=script_directory).returncode
+    if capture:
+        process_result = subprocess.run(command, cwd=script_directory, capture_output=True, text=True)
+        return_code = process_result.returncode
+        error_text = None
+
+        if return_code != 0:
+            stderr_lines = (process_result.stderr or "").strip().splitlines()
+            error_lines = [line for line in stderr_lines if "ERROR" in line] or stderr_lines[-3:]
+            error_text = " | ".join(error_lines[-3:]) if error_lines else f"yt-dlp exited with code {return_code}"
+    else:
+        return_code = subprocess.run(command, cwd=script_directory).returncode
+        error_text = None
 
     if return_code != 0:
         remove_residual_thumbnails(output_directory, images_before)
 
-    return return_code
+    return (return_code, error_text) if capture else return_code
 
 
 def process_download():
@@ -379,6 +390,9 @@ def process_download():
 
         else:
             print("Starting download...\n")
+            import history
+
+            run_id = history.start_run("youtube_download", target=url, total=len(pending_videos))
             failed_videos = []
 
             for video in pending_videos:
@@ -391,7 +405,15 @@ def process_download():
                 else:
                     downloaded_videos[video["id"]] = "DOWNLOADED"
 
+                history.log_item(
+                    run_id,
+                    video["title"],
+                    "ok" if return_code == 0 else "failed",
+                    detail=video.get("url"),
+                )
                 print()
+
+            history.finish_run(run_id, "completed_with_errors" if failed_videos else "completed")
 
             downloaded_count = len(pending_videos) - len(failed_videos)
             print(f"[OK] {downloaded_count}/{len(pending_videos)} musics downloaded.")

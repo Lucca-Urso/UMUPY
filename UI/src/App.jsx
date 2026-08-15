@@ -3,6 +3,7 @@ import Home from './views/Home'
 import Download from './views/Download'
 import Spotify from './views/Spotify'
 import Rekordbox from './views/Rekordbox'
+import History from './views/History'
 
 export default function App() {
   const [view, setView] = useState('home')
@@ -14,6 +15,7 @@ export default function App() {
       {view === 'download' && <Download onBack={goHome} />}
       {view === 'spotify' && <Spotify onBack={goHome} />}
       {view === 'rekordbox' && <Rekordbox onBack={goHome} />}
+      {view === 'history' && <History onBack={goHome} />}
     </div>
   )
 }

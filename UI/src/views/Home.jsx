@@ -40,7 +40,7 @@ const features = [
     id: 'history',
     title: 'History',
     description: 'Browse past operations, downloaded tracks and failures with full logs.',
-    enabled: false,
+    enabled: true,
     icon: (
       <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="9" />

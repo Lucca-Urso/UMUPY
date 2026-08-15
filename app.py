@@ -8,6 +8,13 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(PROJECT_DIR, "Features"))
 
 import yt_downloader
+import history
+
+
+OPERATION_LABEL = {
+    "youtube": "youtube_download",
+    "spotify": "spotify_download",
+}
 
 
 class UmupyApi:
@@ -72,7 +79,7 @@ class UmupyApi:
             "ffmpeg": bool(yt_downloader.find_ffmpeg()),
         }
 
-    def start_download(self, videos, playlist_name=None):
+    def start_download(self, videos, playlist_name=None, operation="youtube"):
         downloads_directory = yt_downloader.get_downloads_directory()
 
         if playlist_name:
@@ -90,21 +97,40 @@ class UmupyApi:
                 "output_directory": output_directory,
             })
 
-        worker = threading.Thread(target=self._download_worker, args=(videos, output_directory), daemon=True)
+        worker = threading.Thread(
+            target=self._download_worker, args=(videos, output_directory, playlist_name, operation), daemon=True
+        )
         worker.start()
 
         return output_directory
 
-    def _download_worker(self, videos, output_directory):
+    def _download_worker(self, videos, output_directory, playlist_name, operation):
         script_directory = yt_downloader.get_script_directory()
         ffmpeg_path = yt_downloader.find_ffmpeg()
+        run_id = history.start_run(
+            OPERATION_LABEL.get(operation, "youtube_download"),
+            target=playlist_name or "Single videos",
+            total=len(videos),
+        )
+        failed_count = 0
 
         for video in videos:
             with self._lock:
                 self._status["current"] = video["title"]
 
-            return_code = yt_downloader.download_video(
-                video, output_directory, "%(title)s.%(ext)s", script_directory, ffmpeg_path
+            return_code, error_text = yt_downloader.download_video(
+                video, output_directory, "%(title)s.%(ext)s", script_directory, ffmpeg_path, capture=True
+            )
+
+            if return_code != 0:
+                failed_count += 1
+
+            history.log_item(
+                run_id,
+                video["title"],
+                "ok" if return_code == 0 else "failed",
+                detail=video.get("url"),
+                error=error_text,
             )
 
             with self._lock:
@@ -113,7 +139,10 @@ class UmupyApi:
                     "title": video["title"],
                     "url": video.get("url"),
                     "ok": return_code == 0,
+                    "error": error_text,
                 })
+
+        history.finish_run(run_id, "completed_with_errors" if failed_count else "completed")
 
         with self._lock:
             self._status["running"] = False
@@ -160,6 +189,8 @@ class UmupyApi:
     def _spotify_worker(self, url, scan_folders):
         import spotify_converter
 
+        run_id = None
+
         try:
             index = self._build_scan_index(scan_folders)
             spotify_index = (
@@ -170,6 +201,7 @@ class UmupyApi:
 
             spotify = spotify_converter.open_spotify()
             playlist = spotify_converter.fetch_playlist(spotify, url)
+            run_id = history.start_run("spotify_convert", target=playlist["name"], total=len(playlist["tracks"]))
 
             with self._lock:
                 self._spotify_status["playlist"] = playlist["name"]
@@ -181,6 +213,7 @@ class UmupyApi:
             for track in playlist["tracks"]:
                 video = spotify_converter.search_youtube_equivalent(ytmusic, track)
                 source = {"title": track["title"], "artists": track["artists"]}
+                label = f"{', '.join(track['artists'])} - {track['title']}"
 
                 with self._lock:
                     self._spotify_status["processed"] += 1
@@ -192,12 +225,28 @@ class UmupyApi:
                     else:
                         self._spotify_status["unmatched"].append(source)
 
+                if video:
+                    history.log_item(run_id, label, "ok", detail=f"-> {video['title']} ({video['url']})")
+                else:
+                    history.log_item(run_id, label, "not_found")
+
+            history.finish_run(run_id, "completed")
+
         except SystemExit:
             with self._lock:
                 self._spotify_status["error"] = "Spotify credentials not found or invalid."
+
+            if run_id:
+                history.finish_run(run_id, "failed")
         except Exception as error:
             with self._lock:
                 self._spotify_status["error"] = str(error)
+
+            if run_id is None:
+                run_id = history.start_run("spotify_convert", target=url)
+
+            history.log_item(run_id, "Analysis", "failed", error=str(error))
+            history.finish_run(run_id, "failed")
         finally:
             with self._lock:
                 self._spotify_status["running"] = False
@@ -237,7 +286,7 @@ class UmupyApi:
         existing_names = {p.Name for p in db.get_playlist()}
         results = rpc.match_playlists(playlists, collection, existing_names)
 
-        self._rekordbox = {"db": db, "results": results}
+        self._rekordbox = {"db": db, "results": results, "source": source_path}
 
         return {
             "collection": len(collection),
@@ -263,9 +312,29 @@ class UmupyApi:
             return {"error": "RekordBox is running. Close it before writing to the database."}
 
         results = [r for r in self._rekordbox["results"] if r["name"] in names]
+        run_id = history.start_run("rekordbox_create", target=str(self._rekordbox["source"]), total=len(results))
         created = rpc.create_playlists(self._rekordbox["db"], results)
 
+        for result in results:
+            if result["exists"] or not result["matched"]:
+                history.log_item(run_id, result["name"], "skipped", detail="already exists or no matches")
+            else:
+                detail = f"{len(result['matched'])} tracks"
+
+                if result["unmatched"]:
+                    detail += f", {len(result['unmatched'])} not found"
+
+                history.log_item(run_id, result["name"], "ok", detail=detail)
+
+        history.finish_run(run_id, "completed")
+
         return {"created": created}
+
+    def history_list(self):
+        return history.list_runs()
+
+    def history_get(self, run_id):
+        return history.get_run(run_id)
 
 
 def main():

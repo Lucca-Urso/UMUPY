@@ -316,7 +316,20 @@ def main():
         print("\n[ERROR] RekordBox is running. Close it before writing to the database.")
         sys.exit(1)
 
+    import history
+
+    run_id = history.start_run("rekordbox_create", target=str(source), total=len(pending))
     created = create_playlists(db, results)
+
+    for result in pending:
+        detail = f"{len(result['matched'])} tracks"
+
+        if result["unmatched"]:
+            detail += f", {len(result['unmatched'])} not found"
+
+        history.log_item(run_id, result["name"], "ok", detail=detail)
+
+    history.finish_run(run_id, "completed")
     print(f"\n[OK] {created} playlist(s) created in RekordBox.")
 
 

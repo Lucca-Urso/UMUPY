@@ -250,6 +250,7 @@ export default function Spotify({ onBack }) {
           playlistName={status.playlist}
           onReset={reset}
           resetLabel="New conversion"
+          operation="spotify"
         />
       )}
     </div>
