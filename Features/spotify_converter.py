@@ -28,7 +28,23 @@ def load_credentials():
         sys.exit(1)
 
     with open(credentials_path) as credentials_file:
-        return json.load(credentials_file)
+        credentials = json.load(credentials_file)
+
+    aliases = {
+        "client_id": ["client_id", "clientId", "clientID", "id"],
+        "client_secret": ["client_secret", "clientSecret", "secret"],
+    }
+
+    for key, candidates in aliases.items():
+        for candidate in candidates:
+            if candidate in credentials:
+                credentials[key] = credentials[candidate]
+                break
+        else:
+            print(f"[ERROR] Missing '{key}' in {credentials_path}")
+            sys.exit(1)
+
+    return credentials
 
 
 def open_spotify():
