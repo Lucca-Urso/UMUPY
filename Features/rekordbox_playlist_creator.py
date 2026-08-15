@@ -5,6 +5,9 @@ from pathlib import Path
 from xml.etree.ElementTree import parse as parse_xml
 
 
+AUDIO_EXTENSIONS = {".mp3", ".m4a", ".wav", ".flac", ".aiff", ".aif"}
+
+
 def normalize(text):
     text = text.lower().strip()
     text = unicodedata.normalize("NFD", text)
@@ -111,6 +114,39 @@ def parse_xml_playlists(xml_path):
     return playlists
 
 
+def parse_audio_folder(folder_path):
+    from mutagen import File as read_audio
+
+    folder_path = Path(folder_path)
+    tracks = []
+
+    for path in sorted(folder_path.rglob("*")):
+        if path.suffix.lower() not in AUDIO_EXTENSIONS:
+            continue
+
+        title = ""
+        artist = ""
+
+        try:
+            audio_file = read_audio(path, easy=True)
+
+            if audio_file and audio_file.tags:
+                title = (audio_file.tags.get("title") or [""])[0]
+                artist = (audio_file.tags.get("artist") or [""])[0]
+        except Exception:
+            pass
+
+        tracks.append({"title": title or path.stem, "artist": artist})
+
+    return tracks
+
+
+def folder_playlist_name(folder_path):
+    name = Path(folder_path).name
+    name = re.sub(r"_\d{2}_\d{2}$", "", name)
+    return name.replace("_", " ").strip()
+
+
 def load_playlists_from_source(source_path):
     source_path = Path(source_path)
 
@@ -119,6 +155,10 @@ def load_playlists_from_source(source_path):
             p for p in source_path.rglob("*")
             if p.suffix.lower() in (".txt", ".xml")
         )
+
+        if not files:
+            tracks = parse_audio_folder(source_path)
+            return [{"name": folder_playlist_name(source_path), "tracks": tracks}] if tracks else []
     else:
         files = [source_path]
 

@@ -88,7 +88,7 @@ export default function Rekordbox({ onBack }) {
           <Card className="p-6">
             <h2 className="text-[15px] font-semibold text-zinc-100">Playlist source</h2>
             <p className="mt-1.5 text-[13px] text-zinc-500">
-              Pick a single playlist export or a folder containing multiple .txt / .xml files.
+              Pick a playlist export (.txt / .xml), a folder of exports, or a downloaded music folder.
             </p>
             <div className="mt-5 flex gap-3">
               <Button variant="secondary" onClick={() => pickSource('file')}>
