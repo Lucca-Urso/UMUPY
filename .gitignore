@@ -4,6 +4,8 @@ Dependencies/*cookies*.txt
 Dependencies/spotify_credentials.json
 History/*
 !History/.gitkeep
+Downloads/*
+!Downloads/.gitkeep
 __pycache__/
 *.pyc
 .venv/

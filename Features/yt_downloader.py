@@ -19,8 +19,10 @@ def get_dependencies_directory():
     return os.path.join(get_project_directory(), "Dependencies")
 
 
-def get_library_directory(script_directory):
-    return os.path.dirname(script_directory)
+def get_downloads_directory():
+    downloads_directory = os.path.join(get_project_directory(), "Downloads")
+    os.makedirs(downloads_directory, exist_ok=True)
+    return downloads_directory
 
 
 def get_fix_artwork_script():
@@ -62,21 +64,6 @@ def find_cookies():
 def cookies_arguments():
     cookies_path = find_cookies()
     return ["--cookies", cookies_path] if cookies_path else []
-
-
-def select_scan_directory():
-    scan_directory = input("Enter folder to scan for duplicates: ").strip()
-
-    if not scan_directory:
-        return None
-
-    scan_directory = os.path.expanduser(scan_directory)
-
-    if not os.path.isdir(scan_directory):
-        print(f"[WARNING] Folder not found: {scan_directory}")
-        return None
-
-    return scan_directory
 
 
 def build_library_index(selected_folders):
@@ -145,16 +132,16 @@ def detect_playlist(url, script_directory):
 
 def resolve_output_directory(url, script_directory):
     playlist_name = detect_playlist(url, script_directory)
-    library_directory = get_library_directory(script_directory)
+    downloads_directory = get_downloads_directory()
 
     if not playlist_name:
         print("Content: Video")
-        return library_directory, "%(title)s.%(ext)s"
+        return downloads_directory, "%(title)s.%(ext)s"
 
     print(f"Content: Playlist -> {playlist_name}")
 
     playlist_directory_name = f"{playlist_name}_{get_today()}"
-    output_directory = os.path.join(library_directory, playlist_directory_name)
+    output_directory = os.path.join(downloads_directory, playlist_directory_name)
 
     os.makedirs(output_directory, exist_ok=True)
     print(f"Directory created: {playlist_directory_name}")
@@ -317,8 +304,7 @@ def process_download():
     scan_duplicates = input("Scan for duplicates? (y/n): ").strip().lower() == "y"
 
     if scan_duplicates:
-        scan_directory = select_scan_directory()
-        downloaded_videos = build_library_index([scan_directory]) if scan_directory else {}
+        downloaded_videos = build_library_index([get_downloads_directory()])
     else:
         downloaded_videos = {}
 

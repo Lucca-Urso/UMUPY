@@ -16,7 +16,8 @@ UMUPY/
 ├── Dependencies/                External binaries and credentials (not versioned)
 │   ├── ffmpeg.exe               FFmpeg binary (Windows fallback)
 │   ├── ffprobe.exe              FFprobe binary (Windows fallback)
-│   └── www.youtube.com_cookies.txt
+│   └── cookies.txt
+├── Downloads/                   Where downloaded music lands (contents not versioned)
 ├── History/                     Operation logs and local database (not versioned)
 ├── UI/                          Frontend (React + Vite + Tailwind, via pywebview)
 └── requirements.txt
@@ -46,8 +47,8 @@ python3 Features/yt_downloader.py
 
 You will be prompted for a YouTube video or playlist URL.
 
-- **Single video**: the MP3 is saved into the library root (the project root folder, one level above `Features/`).
-- **Playlist**: a `PlaylistName_DD_MM/` folder is created in the library root and each track is saved inside it.
+- **Single video**: the MP3 is saved into the project's `Downloads/` folder.
+- **Playlist**: a `Downloads/PlaylistName_DD_MM/` folder is created and each track is saved inside it.
 
 ### Artwork Processing
 
@@ -67,4 +68,4 @@ python3 Features/fix_artwork.py "path/to/file.mp3" "youtube_video_id"
 
 ### Duplicate Detection
 
-At startup the downloader can scan existing MP3s and read the `YOUTUBE_ID` tag embedded in each file. Any video already present in the library is skipped automatically.
+At startup the downloader can scan every MP3 inside the project's `Downloads/` folder (recursively) and read the `YOUTUBE_ID` tag embedded in each file. Any video already present is skipped automatically.
