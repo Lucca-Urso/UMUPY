@@ -6,8 +6,6 @@ import subprocess
 import sys
 from datetime import date
 
-DOWNLOADED_MUSIC_FOLDER_NAME = "Downloaded Musics"
-
 
 def get_script_directory():
     return os.path.dirname(os.path.abspath(__file__))
@@ -48,52 +46,37 @@ def find_ffmpeg():
     return None
 
 
-def list_downloaded_music_folders(library_directory):
-    downloaded_music_directory = os.path.join(library_directory, DOWNLOADED_MUSIC_FOLDER_NAME)
+def find_cookies():
+    dependencies_directory = get_dependencies_directory()
 
-    if not os.path.isdir(downloaded_music_directory):
-        return downloaded_music_directory, []
+    if not os.path.isdir(dependencies_directory):
+        return None
 
-    folders = sorted(d.name for d in os.scandir(downloaded_music_directory) if d.is_dir())
+    for file_name in sorted(os.listdir(dependencies_directory)):
+        if "cookies" in file_name.lower() and file_name.lower().endswith(".txt"):
+            return os.path.join(dependencies_directory, file_name)
 
-    return downloaded_music_directory, folders
+    return None
 
 
-def select_duplicate_scan_folders(library_directory):
-    downloaded_music_directory, folders = list_downloaded_music_folders(library_directory)
+def cookies_arguments():
+    cookies_path = find_cookies()
+    return ["--cookies", cookies_path] if cookies_path else []
 
-    if not folders:
-        print(f"[WARNING] No folders found in {downloaded_music_directory}")
-        return []
 
-    print("\nFolders available for duplicate scan:\n")
-    print("  1. all")
+def select_scan_directory():
+    scan_directory = input("Enter folder to scan for duplicates: ").strip()
 
-    for index, folder_name in enumerate(folders, start=2):
-        print(f"  {index}. {folder_name}")
+    if not scan_directory:
+        return None
 
-    selection = input("\nSelect folders (e.g. 1,3,4): ").strip().lower()
+    scan_directory = os.path.expanduser(scan_directory)
 
-    selected_indexes = set()
+    if not os.path.isdir(scan_directory):
+        print(f"[WARNING] Folder not found: {scan_directory}")
+        return None
 
-    for part in selection.split(","):
-        part = part.strip()
-
-        if part.isdigit():
-            selected_indexes.add(int(part))
-
-    if 1 in selected_indexes:
-        return [os.path.join(downloaded_music_directory, name) for name in folders]
-
-    selected_paths = []
-
-    for index in sorted(selected_indexes):
-        folder_index = index - 2
-
-        if 0 <= folder_index < len(folders):
-            selected_paths.append(os.path.join(downloaded_music_directory, folders[folder_index]))
-
-    return selected_paths
+    return scan_directory
 
 
 def build_library_index(selected_folders):
@@ -146,6 +129,7 @@ def detect_playlist(url, script_directory):
             "--print", "%(playlist_title)s",
             "--playlist-items", "1",
             "--no-warnings",
+            *cookies_arguments(),
             url,
         ],
         capture_output=True, text=True, cwd=script_directory,
@@ -188,6 +172,7 @@ def extract_videos_chunk(url, script_directory, start_index, end_index):
             "--playlist-end", str(end_index),
             "--dump-json",
             "--no-warnings",
+            *cookies_arguments(),
             url,
         ],
         capture_output=True, text=True, cwd=script_directory,
@@ -257,10 +242,36 @@ def filter_pending_videos(videos, downloaded_videos):
     return pending_videos
 
 
+def list_image_files(directory):
+    image_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+
+    if not os.path.isdir(directory):
+        return set()
+
+    return {
+        os.path.join(directory, file_name)
+        for file_name in os.listdir(directory)
+        if os.path.splitext(file_name)[1].lower() in image_extensions
+    }
+
+
+def remove_residual_thumbnails(output_directory, images_before):
+    residual_images = list_image_files(output_directory) - images_before
+
+    for image_path in residual_images:
+        try:
+            os.remove(image_path)
+            print(f"[CLEANUP] Removed residual thumbnail: {os.path.basename(image_path)}")
+        except OSError as error:
+            print(f"[WARNING] Could not remove residual thumbnail: {error}")
+
+
 def download_video(video, output_directory, output_template, script_directory, ffmpeg_path):
     output_path = os.path.join(output_directory, output_template)
     fix_artwork_script = get_fix_artwork_script()
     post_download_command = f'{sys.executable} "{fix_artwork_script}" %(filepath)q %(id)q'
+
+    images_before = list_image_files(output_directory)
 
     command = [
         sys.executable, "-m", "yt_dlp",
@@ -274,15 +285,23 @@ def download_video(video, output_directory, output_template, script_directory, f
         "--embed-metadata",
         "--no-write-playlist-metafiles",
         "--no-abort-on-error",
+        "--retries",                 "10",
+        "--fragment-retries",        "10",
         "--sleep-requests",          "2",
         "--sleep-interval",          "5",
         "--max-sleep-interval",      "10",
         "--output",                  output_path,
         "--exec",                    post_download_command,
+        *cookies_arguments(),
         video["url"],
     ]
 
-    return subprocess.run(command, cwd=script_directory).returncode
+    return_code = subprocess.run(command, cwd=script_directory).returncode
+
+    if return_code != 0:
+        remove_residual_thumbnails(output_directory, images_before)
+
+    return return_code
 
 
 def process_download():
@@ -298,9 +317,8 @@ def process_download():
     scan_duplicates = input("Scan for duplicates? (y/n): ").strip().lower() == "y"
 
     if scan_duplicates:
-        library_directory = get_library_directory(script_directory)
-        selected_folders = select_duplicate_scan_folders(library_directory)
-        downloaded_videos = build_library_index(selected_folders)
+        scan_directory = select_scan_directory()
+        downloaded_videos = build_library_index([scan_directory]) if scan_directory else {}
     else:
         downloaded_videos = {}
 
@@ -326,7 +344,7 @@ def process_download():
 
         else:
             print("Starting download...\n")
-            has_errors = False
+            failed_videos = []
 
             for video in pending_videos:
                 print(f"[DOWNLOAD] {video['title']}\n")
@@ -334,15 +352,21 @@ def process_download():
                 return_code = download_video(video, output_directory, output_template, script_directory, ffmpeg_path)
 
                 if return_code != 0:
-                    has_errors = True
+                    failed_videos.append(video)
+                else:
+                    downloaded_videos[video["id"]] = "DOWNLOADED"
 
-                downloaded_videos[video["id"]] = "DOWNLOADED"
                 print()
 
-            if has_errors:
-                print("[WARNING] Download process concluded with errors.")
-            else:
-                print("[OK] Download process concluded successfully.")
+            downloaded_count = len(pending_videos) - len(failed_videos)
+            print(f"[OK] {downloaded_count}/{len(pending_videos)} musics downloaded.")
+
+            if failed_videos:
+                print(f"\n[WARNING] {len(failed_videos)} download(s) failed:")
+
+                for video in failed_videos:
+                    print(f"  - {video['title']}")
+                    print(f"    {video['url']}")
 
         print(f"\nDownload files saved in: {output_directory}")
 
