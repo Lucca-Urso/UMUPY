@@ -15,7 +15,7 @@ const features = [
     id: 'spotify',
     title: 'Spotify Converter',
     description: 'Turn any Spotify playlist into YouTube downloads with automatic track matching.',
-    enabled: false,
+    enabled: true,
     icon: (
       <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="9" />
@@ -27,7 +27,7 @@ const features = [
     id: 'rekordbox',
     title: 'RekordBox Playlists',
     description: 'Rebuild playlists from .txt or .xml exports directly inside the RekordBox database.',
-    enabled: false,
+    enabled: true,
     icon: (
       <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 6h16M4 12h16M4 18h9" />

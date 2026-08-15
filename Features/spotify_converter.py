@@ -134,6 +134,36 @@ def search_youtube_equivalent(ytmusic, track):
     }
 
 
+def build_spotify_index(selected_folders):
+    from mutagen.mp3 import MP3
+
+    spotify_ids = {}
+
+    for folder_path in selected_folders:
+        for root, _, files in os.walk(folder_path):
+            for file_name in files:
+                if not file_name.lower().endswith(".mp3"):
+                    continue
+
+                audio_path = os.path.join(root, file_name)
+
+                try:
+                    audio_file = MP3(audio_path)
+
+                    if not audio_file.tags:
+                        continue
+
+                    for frame in audio_file.tags.getall("TXXX"):
+                        if frame.desc == "SPOTIFY_ID":
+                            spotify_ids[frame.text[0]] = audio_path
+                            break
+
+                except Exception:
+                    continue
+
+    return spotify_ids
+
+
 def convert_tracks(ytmusic, tracks):
     matched = []
     unmatched = []
@@ -225,8 +255,12 @@ def main():
 
     if scan_duplicates:
         selected_folders = yt_downloader.select_duplicate_scan_folders()
-        downloaded_videos = yt_downloader.build_library_index(selected_folders) if selected_folders else {}
-        matched = yt_downloader.filter_pending_videos(matched, downloaded_videos)
+
+        if selected_folders:
+            downloaded_videos = yt_downloader.build_library_index(selected_folders)
+            spotify_index = build_spotify_index(selected_folders)
+            matched = yt_downloader.filter_pending_videos(matched, downloaded_videos)
+            matched = [v for v in matched if v["spotify_id"] not in spotify_index]
 
         if not matched:
             print("[INFO] Nothing to download.")
