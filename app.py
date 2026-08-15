@@ -14,6 +14,7 @@ import history
 OPERATION_LABEL = {
     "youtube": "youtube_download",
     "spotify": "spotify_download",
+    "sync": "sync_download",
 }
 
 
@@ -22,6 +23,7 @@ class UmupyApi:
         self._lock = threading.Lock()
         self._reset()
         self._spotify_reset()
+        self._sync_reset()
         self._rekordbox = None
 
     def _reset(self):
@@ -42,6 +44,20 @@ class UmupyApi:
             "playlist": None,
             "matched": [],
             "unmatched": [],
+            "error": None,
+        }
+
+    def _sync_reset(self):
+        self._sync_status = {
+            "running": False,
+            "phase": None,
+            "playlist": None,
+            "folder": None,
+            "total": 0,
+            "processed": 0,
+            "in_sync": 0,
+            "orphans": [],
+            "missing": [],
             "error": None,
         }
 
@@ -79,10 +95,12 @@ class UmupyApi:
             "ffmpeg": bool(yt_downloader.find_ffmpeg()),
         }
 
-    def start_download(self, videos, playlist_name=None, operation="youtube"):
+    def start_download(self, videos, playlist_name=None, operation="youtube", output_directory=None):
         downloads_directory = yt_downloader.get_downloads_directory()
 
-        if playlist_name:
+        if output_directory:
+            os.makedirs(output_directory, exist_ok=True)
+        elif playlist_name:
             directory_name = f"{playlist_name}_{yt_downloader.get_today()}"
             output_directory = os.path.join(downloads_directory, directory_name)
             os.makedirs(output_directory, exist_ok=True)
@@ -335,6 +353,132 @@ class UmupyApi:
 
     def history_get(self, run_id):
         return history.get_run(run_id)
+
+    def select_folder(self):
+        import webview
+
+        window = webview.windows[0]
+        result = window.create_file_dialog(webview.FOLDER_DIALOG)
+
+        if not result:
+            return None
+
+        return result[0] if isinstance(result, (list, tuple)) else result
+
+    def start_sync_analysis(self, url, folder):
+        with self._lock:
+            self._sync_reset()
+            self._sync_status["running"] = True
+            self._sync_status["phase"] = "fetching"
+            self._sync_status["folder"] = folder
+
+        worker = threading.Thread(target=self._sync_worker, args=(url, folder), daemon=True)
+        worker.start()
+
+        return True
+
+    def _sync_worker(self, url, folder):
+        import spotify_converter
+        import sync_playlists
+
+        run_id = None
+
+        try:
+            spotify = spotify_converter.open_spotify()
+            playlist = spotify_converter.fetch_playlist(spotify, url)
+
+            with self._lock:
+                self._sync_status["playlist"] = playlist["name"]
+                self._sync_status["phase"] = "comparing"
+
+            local_files = sync_playlists.build_local_index(folder)
+            matched, missing, orphans = sync_playlists.compare_playlist_with_folder(playlist["tracks"], local_files)
+
+            with self._lock:
+                self._sync_status["in_sync"] = len(matched)
+                self._sync_status["total"] = len(missing)
+                self._sync_status["phase"] = "matching"
+                self._sync_status["orphans"] = [
+                    {"filename": f["filename"], "path": f["path"]} for f in orphans
+                ]
+
+            run_id = history.start_run("sync_check", target=playlist["name"], total=len(playlist["tracks"]))
+
+            for f in orphans:
+                history.log_item(run_id, f["filename"], "orphan", detail=f["path"])
+
+            ytmusic = spotify_converter.open_ytmusic()
+
+            for track in missing:
+                video = spotify_converter.search_youtube_equivalent(ytmusic, track)
+                label = f"{', '.join(track['artists'])} - {track['title']}"
+                entry = {
+                    "title": track["title"],
+                    "artists": track["artists"],
+                    "spotify_id": track["spotify_id"],
+                    "video": video,
+                }
+
+                with self._lock:
+                    self._sync_status["processed"] += 1
+                    self._sync_status["missing"].append(entry)
+
+                history.log_item(
+                    run_id,
+                    label,
+                    "missing" if video else "not_found",
+                    detail=video["url"] if video else None,
+                )
+
+            history.finish_run(run_id, "completed")
+
+        except SystemExit:
+            with self._lock:
+                self._sync_status["error"] = "Spotify credentials not found or invalid."
+
+            if run_id:
+                history.finish_run(run_id, "failed")
+        except Exception as error:
+            with self._lock:
+                self._sync_status["error"] = str(error)
+
+            if run_id is None:
+                run_id = history.start_run("sync_check", target=url)
+
+            history.log_item(run_id, "Analysis", "failed", error=str(error))
+            history.finish_run(run_id, "failed")
+        finally:
+            with self._lock:
+                self._sync_status["running"] = False
+                self._sync_status["phase"] = None
+
+    def get_sync_status(self):
+        with self._lock:
+            return dict(self._sync_status)
+
+    def sync_delete(self, paths):
+        import sync_playlists
+
+        with self._lock:
+            folder = self._sync_status.get("folder")
+            playlist = self._sync_status.get("playlist")
+
+        run_id = history.start_run("sync_delete", target=playlist or folder, total=len(paths))
+        results = sync_playlists.delete_files(paths)
+
+        for result in results:
+            history.log_item(
+                run_id,
+                os.path.basename(result["path"]),
+                "ok" if result["ok"] else "failed",
+                detail=result["path"],
+                error=result["error"],
+            )
+
+        failed = [r for r in results if not r["ok"]]
+        history.finish_run(run_id, "completed_with_errors" if failed else "completed")
+
+        return results
 
 
 def main():

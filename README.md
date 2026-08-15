@@ -38,7 +38,9 @@ UMUPY/
 │   ├── yt_downloader.py         Download YouTube videos/playlists as MP3
 │   ├── fix_artwork.py           Embed square 800x800 artwork + tags into MP3s
 │   ├── rekordbox_playlist_creator.py  Create RekordBox playlists from .txt/.xml
-│   └── spotify_converter.py     Convert Spotify playlists to YouTube downloads
+│   ├── spotify_converter.py     Convert Spotify playlists to YouTube downloads
+│   ├── sync_playlists.py        Sync a local folder against a Spotify playlist
+│   └── history.py               Operation history (SQLite + txt logs)
 ├── Dependencies/                External binaries and credentials (not versioned)
 │   ├── ffmpeg.exe               FFmpeg binary (Windows fallback)
 │   ├── ffprobe.exe              FFprobe binary (Windows fallback)

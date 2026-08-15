@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { call } from '../api'
 import { Button, Card, Spinner, StatusIcon } from './ui'
 
-export default function DownloadRunner({ videos, playlistName, onReset, resetLabel = 'New download', operation = 'youtube' }) {
+export default function DownloadRunner({ videos, playlistName, onReset, resetLabel = 'New download', operation = 'youtube', outputDirectory = null }) {
   const [status, setStatus] = useState(null)
   const [outputDir, setOutputDir] = useState(null)
   const [done, setDone] = useState(false)
@@ -11,7 +11,7 @@ export default function DownloadRunner({ videos, playlistName, onReset, resetLab
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const dir = await call('start_download', videos, playlistName, operation)
+      const dir = await call('start_download', videos, playlistName, operation, outputDirectory)
       if (cancelled) return
       setOutputDir(dir)
       pollRef.current = setInterval(async () => {

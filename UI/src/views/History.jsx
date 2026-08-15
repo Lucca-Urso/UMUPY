@@ -7,6 +7,9 @@ const OPERATION_LABELS = {
   spotify_download: 'Spotify Download',
   spotify_convert: 'Spotify Conversion',
   rekordbox_create: 'RekordBox Playlists',
+  sync_check: 'Sync Check',
+  sync_delete: 'Sync Delete',
+  sync_download: 'Sync Download',
 }
 
 const STATUS_STYLES = {

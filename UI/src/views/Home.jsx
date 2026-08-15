@@ -37,6 +37,18 @@ const features = [
     ),
   },
   {
+    id: 'sync',
+    title: 'Playlist Sync',
+    description: 'Compare a Spotify playlist with a local folder, delete orphans and download missing tracks.',
+    enabled: true,
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 9a8 8 0 0 1 14-3m2-3v6h-6" />
+        <path d="M20 15a8 8 0 0 1-14 3m-2 3v-6h6" />
+      </svg>
+    ),
+  },
+  {
     id: 'history',
     title: 'History',
     description: 'Browse past operations, downloaded tracks and failures with full logs.',
