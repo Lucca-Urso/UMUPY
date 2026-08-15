@@ -27,6 +27,13 @@ CREATE INDEX IF NOT EXISTS idx_run_items_run ON run_items(run_id);
 
 
 def get_project_directory():
+    import sys
+
+    if getattr(sys, "frozen", False):
+        directory = os.path.join(os.path.expanduser("~"), "UMUPY")
+        os.makedirs(directory, exist_ok=True)
+        return directory
+
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 

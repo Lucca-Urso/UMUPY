@@ -16,4 +16,5 @@ UI/dist/
 build/
 dist/
 *.spec
+!umupy.spec
 .DS_Store

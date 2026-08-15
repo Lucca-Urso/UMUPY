@@ -5,7 +5,14 @@ import sys
 import threading
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(PROJECT_DIR, "Features"))
+
+if getattr(sys, "frozen", False):
+    sys.path.insert(0, os.path.join(sys._MEIPASS, "Features"))
+else:
+    sys.path.insert(0, os.path.join(PROJECT_DIR, "Features"))
+
+if platform.system() == "Darwin":
+    os.environ["PATH"] = os.environ.get("PATH", "") + ":/opt/homebrew/bin:/usr/local/bin"
 
 import yt_downloader
 import history
@@ -482,6 +489,18 @@ class UmupyApi:
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--yt-dlp":
+        import yt_dlp
+
+        yt_dlp.main(sys.argv[2:])
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "--fix-artwork":
+        import fix_artwork
+
+        fix_artwork.fix_audio_artwork(*sys.argv[2:5])
+        return
+
     import webview
 
     api = UmupyApi()
@@ -489,6 +508,8 @@ def main():
 
     if dev_mode:
         entry = "http://localhost:5173"
+    elif getattr(sys, "frozen", False):
+        entry = os.path.join(sys._MEIPASS, "UI", "dist", "index.html")
     else:
         entry = os.path.join(PROJECT_DIR, "UI", "dist", "index.html")
 

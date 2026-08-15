@@ -27,6 +27,16 @@ After changing the frontend, rebuild it once so the app picks it up:
 cd UI && npm run build
 ```
 
+## Packaging (clickable app)
+
+```bash
+pip install pyinstaller
+cd UI && npm run build && cd ..
+python3 -m PyInstaller --noconfirm umupy.spec
+```
+
+The bundle lands in `dist/UMUPY.app` (macOS) — move it to Applications if you like. The packaged app keeps its data in `~/UMUPY/` (`Downloads/`, `Dependencies/` with cookies and Spotify credentials, `History/`). FFmpeg and Deno must be installed on the system (`brew install ffmpeg deno`).
+
 ---
 
 ## Project Structure

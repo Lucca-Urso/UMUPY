@@ -12,7 +12,19 @@ def get_script_directory():
 
 
 def get_project_directory():
+    if getattr(sys, "frozen", False):
+        directory = os.path.join(os.path.expanduser("~"), "UMUPY")
+        os.makedirs(directory, exist_ok=True)
+        return directory
+
     return os.path.dirname(get_script_directory())
+
+
+def yt_dlp_command():
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--yt-dlp"]
+
+    return [sys.executable, "-m", "yt_dlp"]
 
 
 def get_dependencies_directory():
@@ -155,7 +167,7 @@ def build_library_index(selected_folders):
 def detect_playlist(url, script_directory):
     process_result = subprocess.run(
         [
-            sys.executable, "-m", "yt_dlp",
+            *yt_dlp_command(),
             "--flat-playlist",
             "--extractor-args", "youtubetab:skip=webpage",
             "--print", "%(playlist_title)s",
@@ -197,7 +209,7 @@ def resolve_output_directory(url, script_directory):
 def extract_videos_chunk(url, script_directory, start_index, end_index):
     process_result = subprocess.run(
         [
-            sys.executable, "-m", "yt_dlp",
+            *yt_dlp_command(),
             "--flat-playlist",
             "--extractor-args", "youtubetab:skip=webpage",
             "--playlist-start", str(start_index),
@@ -301,7 +313,11 @@ def remove_residual_thumbnails(output_directory, images_before):
 def download_video(video, output_directory, output_template, script_directory, ffmpeg_path, capture=False):
     output_path = os.path.join(output_directory, output_template)
     fix_artwork_script = get_fix_artwork_script()
-    post_download_command = f'{sys.executable} "{fix_artwork_script}" %(filepath)q %(id)q'
+
+    if getattr(sys, "frozen", False):
+        post_download_command = f'"{sys.executable}" --fix-artwork %(filepath)q %(id)q'
+    else:
+        post_download_command = f'{sys.executable} "{fix_artwork_script}" %(filepath)q %(id)q'
 
     if video.get("spotify_id"):
         post_download_command += f' {video["spotify_id"]}'
@@ -309,7 +325,7 @@ def download_video(video, output_directory, output_template, script_directory, f
     images_before = list_image_files(output_directory)
 
     command = [
-        sys.executable, "-m", "yt_dlp",
+        *yt_dlp_command(),
         "--format",                  "bestaudio[ext=m4a]/bestaudio/best",
         "--extract-audio",
         "--audio-format",            "mp3",
