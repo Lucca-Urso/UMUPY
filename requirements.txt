@@ -1,0 +1,8 @@
+yt-dlp
+mutagen
+pillow
+pyrekordbox
+spotipy
+ytmusicapi
+thefuzz
+pywebview
