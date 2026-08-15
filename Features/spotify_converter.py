@@ -221,7 +221,7 @@ def main():
         print("[INFO] Nothing to download.")
         return
 
-    scan_duplicates = input("\nScan Downloads for duplicates? (y/n): ").strip().lower() == "y"
+    scan_duplicates = yt_downloader.ask_yes_no("\nScan Downloads for duplicates? (y/n): ")
 
     if scan_duplicates:
         selected_folders = yt_downloader.select_duplicate_scan_folders()
@@ -232,7 +232,7 @@ def main():
             print("[INFO] Nothing to download.")
             return
 
-    if input(f"Download {len(matched)} musics? (y/n): ").strip().lower() != "y":
+    if not yt_downloader.ask_yes_no(f"Download {len(matched)} musics? (y/n): "):
         print("Operation cancelled.")
         return
 

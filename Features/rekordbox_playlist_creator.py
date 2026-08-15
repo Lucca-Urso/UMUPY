@@ -207,6 +207,14 @@ def preview_results(results):
             print(f"  - {track['title']} ({track['artist']}) [NOT FOUND]")
 
 
+def ask_yes_no(question):
+    while True:
+        answer = input(question).strip().lower()
+
+        if answer in ("y", "n"):
+            return answer == "y"
+
+
 def create_playlists(db, results):
     created = 0
 
@@ -260,7 +268,7 @@ def main():
         print("\n[INFO] Nothing to create.")
         return
 
-    if input(f"\nCreate {len(pending)} playlist(s) in RekordBox? (y/n): ").strip().lower() != "y":
+    if not ask_yes_no(f"\nCreate {len(pending)} playlist(s) in RekordBox? (y/n): "):
         print("Operation cancelled.")
         return
 

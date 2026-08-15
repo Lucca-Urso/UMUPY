@@ -66,6 +66,14 @@ def cookies_arguments():
     return ["--cookies", cookies_path] if cookies_path else []
 
 
+def ask_yes_no(question):
+    while True:
+        answer = input(question).strip().lower()
+
+        if answer in ("y", "n"):
+            return answer == "y"
+
+
 def select_duplicate_scan_folders():
     downloads_directory = get_downloads_directory()
     folders = sorted(d.name for d in os.scandir(downloads_directory) if d.is_dir())
@@ -341,7 +349,7 @@ def process_download():
         input("\nPress Enter to exit...")
         sys.exit(1)
 
-    scan_duplicates = input("Scan for duplicates? (y/n): ").strip().lower() == "y"
+    scan_duplicates = ask_yes_no("Scan for duplicates? (y/n): ")
 
     if scan_duplicates:
         selected_folders = select_duplicate_scan_folders()
@@ -397,7 +405,7 @@ def process_download():
 
         print(f"\nDownload files saved in: {output_directory}")
 
-        if input("\nDownload more URLs? (y/n): ").strip().lower() != "y":
+        if not ask_yes_no("\nDownload more URLs? (y/n): "):
             break
 
     print("\nExiting...")
