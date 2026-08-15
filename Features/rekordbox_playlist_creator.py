@@ -1,0 +1,276 @@
+import re
+import sys
+import unicodedata
+from pathlib import Path
+from xml.etree.ElementTree import parse as parse_xml
+
+
+def normalize(text):
+    text = text.lower().strip()
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    text = re.sub(r"[^\w\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def similarity_score(a, b):
+    a_words = set(normalize(a).split())
+    b_words = set(normalize(b).split())
+    if not a_words or not b_words:
+        return 0.0
+    return len(a_words & b_words) / max(len(a_words), len(b_words))
+
+
+def parse_txt_playlist(txt_path):
+    txt_path = Path(txt_path)
+
+    try:
+        content = txt_path.read_text(encoding="utf-16")
+    except UnicodeDecodeError:
+        content = txt_path.read_text(encoding="utf-8", errors="replace")
+
+    lines = content.splitlines()
+
+    header_line = None
+    header_idx = 0
+    for i, line in enumerate(lines):
+        if "Track Title" in line or "Artist" in line:
+            header_line = line
+            header_idx = i
+            break
+
+    if header_line is None:
+        return []
+
+    headers = [h.strip() for h in header_line.split("\t")]
+
+    col = {}
+    for keyword, candidates in {
+        "title":  ["Track Title", "Title"],
+        "artist": ["Artist"],
+    }.items():
+        for candidate in candidates:
+            if candidate in headers:
+                col[keyword] = headers.index(candidate)
+                break
+
+    tracks = []
+    for line in lines[header_idx + 1:]:
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+
+        def get(key, default=""):
+            idx = col.get(key)
+            if idx is None or idx >= len(parts):
+                return default
+            return parts[idx].strip()
+
+        title = get("title")
+        if not title:
+            continue
+
+        tracks.append({"title": title, "artist": get("artist")})
+
+    return tracks
+
+
+def parse_xml_playlists(xml_path):
+    tree = parse_xml(xml_path)
+    root = tree.getroot()
+
+    tracks_by_id = {}
+    collection = root.find("COLLECTION")
+
+    if collection is not None:
+        for track in collection.findall("TRACK"):
+            track_id = track.get("TrackID")
+            if track_id:
+                tracks_by_id[track_id] = {
+                    "title": track.get("Name", ""),
+                    "artist": track.get("Artist", ""),
+                }
+
+    playlists = []
+    playlists_node = root.find("PLAYLISTS")
+
+    if playlists_node is not None:
+        for node in playlists_node.iter("NODE"):
+            if node.get("Type") != "1":
+                continue
+
+            tracks = []
+            for track in node.findall("TRACK"):
+                info = tracks_by_id.get(track.get("Key"))
+                if info and info["title"]:
+                    tracks.append(dict(info))
+
+            playlists.append({"name": node.get("Name", ""), "tracks": tracks})
+
+    return playlists
+
+
+def load_playlists_from_source(source_path):
+    source_path = Path(source_path)
+
+    if source_path.is_dir():
+        files = sorted(
+            p for p in source_path.rglob("*")
+            if p.suffix.lower() in (".txt", ".xml")
+        )
+    else:
+        files = [source_path]
+
+    playlists = []
+
+    for file_path in files:
+        if file_path.suffix.lower() == ".xml":
+            playlists.extend(parse_xml_playlists(file_path))
+        elif file_path.suffix.lower() == ".txt":
+            tracks = parse_txt_playlist(file_path)
+            playlists.append({"name": file_path.stem.replace("_", " "), "tracks": tracks})
+
+    return [p for p in playlists if p["tracks"]]
+
+
+def find_best_match(track, collection):
+    title_norm = normalize(track["title"])
+    artist_norm = normalize(track["artist"])
+
+    best = None
+    best_score = 0.0
+
+    for content in collection:
+        title_score = similarity_score(title_norm, normalize(content.Title or ""))
+        artist_name = content.Artist.Name if content.Artist else ""
+        artist_bonus = similarity_score(artist_norm, normalize(artist_name)) * 0.3 if artist_norm else 0.0
+        score = title_score + artist_bonus
+
+        if score > best_score:
+            best_score = score
+            best = content
+
+    return best if best_score >= 0.5 else None
+
+
+def open_database():
+    from pyrekordbox import Rekordbox6Database
+
+    return Rekordbox6Database()
+
+
+def rekordbox_is_running():
+    from pyrekordbox.utils import get_rekordbox_pid
+
+    return get_rekordbox_pid() != 0
+
+
+def match_playlists(playlists, collection, existing_names):
+    results = []
+
+    for playlist in playlists:
+        result = {
+            "name": playlist["name"],
+            "exists": playlist["name"] in existing_names,
+            "matched": [],
+            "unmatched": [],
+        }
+
+        for track in playlist["tracks"]:
+            content = find_best_match(track, collection)
+
+            if content:
+                result["matched"].append({
+                    "title": track["title"],
+                    "artist": track["artist"],
+                    "content": content,
+                })
+            else:
+                result["unmatched"].append(track)
+
+        results.append(result)
+
+    return results
+
+
+def preview_results(results):
+    for result in results:
+        status = " (already exists, will be skipped)" if result["exists"] else ""
+        print(f"\n[{result['name']}]{status}")
+        print(f"  {len(result['matched'])} matched, {len(result['unmatched'])} unmatched")
+
+        for item in result["matched"]:
+            print(f"  + {item['title']} ({item['artist']})")
+
+        for track in result["unmatched"]:
+            print(f"  - {track['title']} ({track['artist']}) [NOT FOUND]")
+
+
+def create_playlists(db, results):
+    created = 0
+
+    for result in results:
+        if result["exists"] or not result["matched"]:
+            continue
+
+        playlist = db.create_playlist(result["name"])
+
+        for item in result["matched"]:
+            db.add_to_playlist(playlist, item["content"])
+
+        db.commit()
+        created += 1
+
+    return created
+
+
+def main():
+    if len(sys.argv) > 1:
+        source_path = sys.argv[1]
+    else:
+        source_path = input("Enter playlist source path (.txt/.xml file or folder): ").strip()
+
+    source = Path(source_path)
+
+    if not source.exists():
+        print(f"[ERROR] Path not found: {source}")
+        sys.exit(1)
+
+    playlists = load_playlists_from_source(source)
+
+    if not playlists:
+        print("[ERROR] No playlists found in source.")
+        sys.exit(1)
+
+    print(f"\n{len(playlists)} playlist(s) loaded from source.")
+
+    db = open_database()
+    collection = list(db.get_content())
+    existing_names = {p.Name for p in db.get_playlist()}
+
+    print(f"{len(collection)} tracks loaded from RekordBox collection.")
+
+    results = match_playlists(playlists, collection, existing_names)
+    preview_results(results)
+
+    pending = [r for r in results if not r["exists"] and r["matched"]]
+
+    if not pending:
+        print("\n[INFO] Nothing to create.")
+        return
+
+    if input(f"\nCreate {len(pending)} playlist(s) in RekordBox? (y/n): ").strip().lower() != "y":
+        print("Operation cancelled.")
+        return
+
+    if rekordbox_is_running():
+        print("\n[ERROR] RekordBox is running. Close it before writing to the database.")
+        sys.exit(1)
+
+    created = create_playlists(db, results)
+    print(f"\n[OK] {created} playlist(s) created in RekordBox.")
+
+
+if __name__ == "__main__":
+    main()
