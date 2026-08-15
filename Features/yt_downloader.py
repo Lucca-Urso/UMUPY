@@ -66,6 +66,43 @@ def cookies_arguments():
     return ["--cookies", cookies_path] if cookies_path else []
 
 
+def select_duplicate_scan_folders():
+    downloads_directory = get_downloads_directory()
+    folders = sorted(d.name for d in os.scandir(downloads_directory) if d.is_dir())
+
+    if not folders:
+        return [downloads_directory]
+
+    print("\nFolders available for duplicate scan:\n")
+    print("  1. all")
+
+    for index, folder_name in enumerate(folders, start=2):
+        print(f"  {index}. {folder_name}")
+
+    selection = input("\nSelect folders (e.g. 1,3,4): ").strip().lower()
+
+    selected_indexes = set()
+
+    for part in selection.split(","):
+        part = part.strip()
+
+        if part.isdigit():
+            selected_indexes.add(int(part))
+
+    if 1 in selected_indexes:
+        return [downloads_directory]
+
+    selected_paths = []
+
+    for index in sorted(selected_indexes):
+        folder_index = index - 2
+
+        if 0 <= folder_index < len(folders):
+            selected_paths.append(os.path.join(downloads_directory, folders[folder_index]))
+
+    return selected_paths
+
+
 def build_library_index(selected_folders):
     from mutagen.mp3 import MP3
 
@@ -307,7 +344,8 @@ def process_download():
     scan_duplicates = input("Scan for duplicates? (y/n): ").strip().lower() == "y"
 
     if scan_duplicates:
-        downloaded_videos = build_library_index([get_downloads_directory()])
+        selected_folders = select_duplicate_scan_folders()
+        downloaded_videos = build_library_index(selected_folders) if selected_folders else {}
     else:
         downloaded_videos = {}
 

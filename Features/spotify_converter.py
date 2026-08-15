@@ -224,7 +224,8 @@ def main():
     scan_duplicates = input("\nScan Downloads for duplicates? (y/n): ").strip().lower() == "y"
 
     if scan_duplicates:
-        downloaded_videos = yt_downloader.build_library_index([yt_downloader.get_downloads_directory()])
+        selected_folders = yt_downloader.select_duplicate_scan_folders()
+        downloaded_videos = yt_downloader.build_library_index(selected_folders) if selected_folders else {}
         matched = yt_downloader.filter_pending_videos(matched, downloaded_videos)
 
         if not matched:
