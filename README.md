@@ -6,10 +6,34 @@ Supports **Windows** and **macOS**.
 
 ---
 
+## Running the App
+
+```bash
+python3 app.py
+```
+
+The UMUPY window opens with one card per feature. The YouTube Downloader flow: paste a URL, optionally scan Downloads folders for duplicates, review the track list with checkboxes and start the batch download with live progress.
+
+Development mode (frontend hot reload):
+
+```bash
+cd UI && npm run dev &
+python3 app.py --dev
+```
+
+After changing the frontend, rebuild it once so the app picks it up:
+
+```bash
+cd UI && npm run build
+```
+
+---
+
 ## Project Structure
 
 ```
 UMUPY/
+├── app.py                       Desktop app entry point (pywebview)
 ├── Features/                    Backend scripts (one per feature)
 │   ├── yt_downloader.py         Download YouTube videos/playlists as MP3
 │   ├── fix_artwork.py           Embed square 800x800 artwork + tags into MP3s
