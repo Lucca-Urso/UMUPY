@@ -73,11 +73,11 @@ def open_ytmusic():
 def fetch_playlist(spotify, playlist_url):
     playlist = spotify.playlist(playlist_url)
     tracks = []
-    page = playlist["tracks"]
+    page = playlist.get("tracks") or playlist.get("items")
 
     while page:
-        for item in page["items"]:
-            track = item.get("track")
+        for entry in page["items"]:
+            track = entry.get("track") or entry.get("item")
 
             if not track or not track.get("id"):
                 continue
