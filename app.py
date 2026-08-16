@@ -93,12 +93,18 @@ class UmupyApi:
         playlist_name = yt_downloader.detect_playlist(url, script_directory)
         videos = yt_downloader.extract_videos(url, script_directory)
 
+        error = None
+
+        if not videos:
+            error = yt_downloader.probe_url_error(url, script_directory)
+
         for video in videos:
             video["duplicate"] = video["id"] in index
 
         return {
             "playlist": playlist_name or None,
             "videos": videos,
+            "error": error,
             "ffmpeg": bool(yt_downloader.find_ffmpeg()),
         }
 
@@ -234,11 +240,31 @@ class UmupyApi:
                 self._spotify_status["phase"] = "matching"
 
             ytmusic = spotify_converter.open_ytmusic()
+            consecutive_failures = 0
 
             for track in playlist["tracks"]:
-                video = spotify_converter.search_youtube_equivalent(ytmusic, track)
                 source = {"title": track["title"], "artists": track["artists"]}
                 label = f"{', '.join(track['artists'])} - {track['title']}"
+
+                try:
+                    video = spotify_converter.search_youtube_equivalent(ytmusic, track)
+                    consecutive_failures = 0
+                except Exception as search_error:
+                    consecutive_failures += 1
+
+                    with self._lock:
+                        self._spotify_status["processed"] += 1
+                        self._spotify_status["unmatched"].append(source)
+
+                    history.log_item(run_id, label, "failed", error=str(search_error))
+
+                    if consecutive_failures >= spotify_converter.MAX_CONSECUTIVE_FAILURES:
+                        raise Exception(
+                            f"Network failed {consecutive_failures} times in a row while matching. "
+                            "Check your connection and try again."
+                        )
+
+                    continue
 
                 with self._lock:
                     self._spotify_status["processed"] += 1
@@ -425,10 +451,24 @@ class UmupyApi:
                 history.log_item(run_id, f["filename"], "orphan", detail=f["path"])
 
             ytmusic = spotify_converter.open_ytmusic()
+            consecutive_failures = 0
 
             for track in missing:
-                video = spotify_converter.search_youtube_equivalent(ytmusic, track)
                 label = f"{', '.join(track['artists'])} - {track['title']}"
+
+                try:
+                    video = spotify_converter.search_youtube_equivalent(ytmusic, track)
+                    consecutive_failures = 0
+                except Exception as search_error:
+                    consecutive_failures += 1
+                    video = None
+
+                    if consecutive_failures >= spotify_converter.MAX_CONSECUTIVE_FAILURES:
+                        raise Exception(
+                            f"Network failed {consecutive_failures} times in a row while matching. "
+                            "Check your connection and try again."
+                        )
+
                 entry = {
                     "title": track["title"],
                     "artists": track["artists"],

@@ -7,6 +7,20 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import yt_downloader
 
 MATCH_THRESHOLD = 75
+MAX_CONSECUTIVE_FAILURES = 5
+
+
+def retry_call(operation, attempts=4, delay=2):
+    import time
+
+    for attempt in range(attempts):
+        try:
+            return operation()
+        except Exception:
+            if attempt == attempts - 1:
+                raise
+
+            time.sleep(delay * (attempt + 1))
 
 
 def get_credentials_path():
@@ -61,7 +75,7 @@ def open_spotify():
         cache_path=get_token_cache_path(),
     )
 
-    return spotipy.Spotify(auth_manager=auth_manager)
+    return spotipy.Spotify(auth_manager=auth_manager, requests_timeout=20, retries=5)
 
 
 def open_ytmusic():
@@ -71,7 +85,7 @@ def open_ytmusic():
 
 
 def fetch_playlist(spotify, playlist_url):
-    playlist = spotify.playlist(playlist_url)
+    playlist = retry_call(lambda: spotify.playlist(playlist_url))
     tracks = []
     page = playlist.get("tracks") or playlist.get("items")
 
@@ -89,7 +103,7 @@ def fetch_playlist(spotify, playlist_url):
                 "duration": round(track["duration_ms"] / 1000),
             })
 
-        page = spotify.next(page) if page.get("next") else None
+        page = retry_call(lambda: spotify.next(page)) if page.get("next") else None
 
     return {"name": playlist["name"], "tracks": tracks}
 
@@ -99,7 +113,7 @@ def search_youtube_equivalent(ytmusic, track):
 
     artist_names = " ".join(track["artists"])
     query = f"{artist_names} {track['title']}".strip()
-    results = ytmusic.search(query, filter="songs", limit=10) or []
+    results = retry_call(lambda: ytmusic.search(query, filter="songs", limit=10)) or []
 
     best = None
     best_score = 0.0
@@ -167,12 +181,27 @@ def build_spotify_index(selected_folders):
 def convert_tracks(ytmusic, tracks):
     matched = []
     unmatched = []
+    consecutive_failures = 0
 
     print(f"\n[Convert] Searching YouTube equivalents for {len(tracks)} tracks...\n")
 
     for track in tracks:
         label = f"{', '.join(track['artists'])} - {track['title']}"
-        video = search_youtube_equivalent(ytmusic, track)
+
+        try:
+            video = search_youtube_equivalent(ytmusic, track)
+            consecutive_failures = 0
+        except Exception as error:
+            consecutive_failures += 1
+            unmatched.append(track)
+            print(f"  [ERROR] {label}")
+            print(f"          {error}")
+
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                print(f"\n[ERROR] {MAX_CONSECUTIVE_FAILURES} consecutive network failures. Aborting search.")
+                break
+
+            continue
 
         if video:
             matched.append(video)

@@ -19,7 +19,7 @@ export default function Download({ onBack }) {
     try {
       const result = await call('analyze_url', url.trim(), scanEnabled ? [...selectedFolders] : null)
       if (!result.ffmpeg) throw new Error('FFmpeg not found. Install it globally or place it in Dependencies/.')
-      if (!result.videos.length) throw new Error('No downloadable content found at this URL.')
+      if (!result.videos.length) throw new Error(result.error || 'No downloadable content found at this URL.')
       setAnalysis(result)
       setChecked(new Set(result.videos.filter((v) => !v.duplicate).map((v) => v.id)))
       setStep('select')

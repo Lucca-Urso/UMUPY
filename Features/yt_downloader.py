@@ -176,7 +176,7 @@ def detect_playlist(url, script_directory):
             *cookies_arguments(),
             url,
         ],
-        capture_output=True, text=True, cwd=script_directory,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=script_directory,
     )
 
     playlist_name = process_result.stdout.strip().splitlines()[0] if process_result.stdout.strip() else ""
@@ -219,7 +219,7 @@ def extract_videos_chunk(url, script_directory, start_index, end_index):
             *cookies_arguments(),
             url,
         ],
-        capture_output=True, text=True, cwd=script_directory,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=script_directory,
     )
 
     videos = []
@@ -267,6 +267,30 @@ def extract_videos(url, script_directory):
         start_index += chunk_size
 
     return all_videos
+
+
+def probe_url_error(url, script_directory):
+    process_result = subprocess.run(
+        [
+            *yt_dlp_command(),
+            "--flat-playlist",
+            "--extractor-args", "youtubetab:skip=webpage",
+            "--playlist-items", "1",
+            "--simulate",
+            "--print", "%(id)s",
+            *cookies_arguments(),
+            url,
+        ],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=script_directory,
+    )
+
+    if process_result.returncode == 0 and process_result.stdout.strip():
+        return None
+
+    stderr_lines = (process_result.stderr or "").strip().splitlines()
+    error_lines = [line for line in stderr_lines if "ERROR" in line] or stderr_lines[-3:]
+
+    return " | ".join(error_lines[-3:]) if error_lines else "yt-dlp returned no results for this URL"
 
 
 def filter_pending_videos(videos, downloaded_videos):
@@ -348,7 +372,9 @@ def download_video(video, output_directory, output_template, script_directory, f
     ]
 
     if capture:
-        process_result = subprocess.run(command, cwd=script_directory, capture_output=True, text=True)
+        process_result = subprocess.run(
+            command, cwd=script_directory, capture_output=True, text=True, encoding="utf-8", errors="replace"
+        )
         return_code = process_result.returncode
         error_text = None
 
