@@ -81,7 +81,7 @@ def _append_log(run_id, message):
     if run is None:
         return
 
-    with open(_log_file_path(run), "a") as log_file:
+    with open(_log_file_path(run), "a", encoding="utf-8") as log_file:
         log_file.write(f"[{_now()}] {message}\n")
 
 

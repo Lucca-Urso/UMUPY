@@ -169,7 +169,7 @@ def detect_playlist(url, script_directory):
         [
             *yt_dlp_command(),
             "--flat-playlist",
-            "--extractor-args", "youtubetab:skip=webpage",
+            "--extractor-args", "youtubetab:skip=webpage,authcheck",
             "--print", "%(playlist_title)s",
             "--playlist-items", "1",
             "--no-warnings",
@@ -211,7 +211,7 @@ def extract_videos_chunk(url, script_directory, start_index, end_index):
         [
             *yt_dlp_command(),
             "--flat-playlist",
-            "--extractor-args", "youtubetab:skip=webpage",
+            "--extractor-args", "youtubetab:skip=webpage,authcheck",
             "--playlist-start", str(start_index),
             "--playlist-end", str(end_index),
             "--dump-json",
@@ -274,7 +274,7 @@ def probe_url_error(url, script_directory):
         [
             *yt_dlp_command(),
             "--flat-playlist",
-            "--extractor-args", "youtubetab:skip=webpage",
+            "--extractor-args", "youtubetab:skip=webpage,authcheck",
             "--playlist-items", "1",
             "--simulate",
             "--print", "%(id)s",
