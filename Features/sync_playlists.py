@@ -91,6 +91,56 @@ def compare_playlist_with_folder(tracks, local_files):
     return matched, missing, remaining
 
 
+def reconcile_missing(missing_entries, orphans):
+    by_youtube_id = {f["youtube_id"]: f for f in orphans if f["youtube_id"]}
+
+    still_missing = []
+    reconciled = []
+
+    for entry in missing_entries:
+        video = entry.get("video")
+        file = by_youtube_id.get(video["id"]) if video else None
+
+        if file and file in orphans:
+            reconciled.append((entry, file))
+            orphans.remove(file)
+        else:
+            still_missing.append(entry)
+
+    return still_missing, reconciled
+
+
+def embed_spotify_id(path, spotify_id):
+    from mutagen.id3 import TXXX
+    from mutagen.mp3 import MP3
+
+    audio = MP3(path)
+
+    if audio.tags is None:
+        audio.add_tags()
+
+    audio.tags.delall("TXXX:SPOTIFY_ID")
+    audio.tags.add(TXXX(encoding=3, desc="SPOTIFY_ID", text=[spotify_id]))
+    audio.save(v2_version=3)
+
+
+def heal_spotify_ids(matched_pairs):
+    healed = 0
+
+    for track, file in matched_pairs:
+        if file["spotify_id"]:
+            continue
+
+        try:
+            embed_spotify_id(file["path"], track["spotify_id"])
+            file["spotify_id"] = track["spotify_id"]
+            healed += 1
+        except Exception:
+            continue
+
+    return healed
+
+
 def delete_files(paths):
     results = []
 
@@ -125,13 +175,51 @@ def main():
     print(f"Local folder: {folder} ({len(local_files)} files)")
 
     matched, missing, orphans = compare_playlist_with_folder(playlist["tracks"], local_files)
+    healed = heal_spotify_ids(matched)
 
-    print(f"\n[Sync] {len(matched)} in sync, {len(missing)} missing locally, {len(orphans)} local orphans.")
+    if healed:
+        print(f"[Sync] Tagged {healed} file(s) with SPOTIFY_ID.")
+
+    videos = []
+    reconciled = []
+
+    if missing:
+        ytmusic = spotify_converter.open_ytmusic()
+        found_videos, unmatched = spotify_converter.convert_tracks(ytmusic, missing)
+        video_by_spotify_id = {v["spotify_id"]: v for v in found_videos}
+        missing_entries = [
+            {
+                "title": t["title"],
+                "artists": t["artists"],
+                "spotify_id": t["spotify_id"],
+                "video": video_by_spotify_id.get(t["spotify_id"]),
+            }
+            for t in missing
+        ]
+        still_missing, reconciled = reconcile_missing(missing_entries, orphans)
+
+        for entry, file in reconciled:
+            try:
+                embed_spotify_id(file["path"], entry["spotify_id"])
+            except Exception:
+                pass
+
+            print(f"[Sync] Reconciled by YOUTUBE_ID: {file['filename']}")
+
+        missing = still_missing
+        videos = [e["video"] for e in missing if e["video"]]
+
+    in_sync = len(matched) + len(reconciled)
+    print(f"\n[Sync] {in_sync} in sync, {len(missing)} missing locally, {len(orphans)} local orphans.")
 
     run_id = history.start_run("sync_check", target=playlist["name"], total=len(playlist["tracks"]))
 
-    for track in missing:
-        history.log_item(run_id, f"{', '.join(track['artists'])} - {track['title']}", "missing")
+    for entry in missing:
+        history.log_item(
+            run_id,
+            f"{', '.join(entry['artists'])} - {entry['title']}",
+            "missing" if entry.get("video") else "not_found",
+        )
 
     for f in orphans:
         history.log_item(run_id, f["filename"], "orphan", detail=f["path"])
@@ -161,40 +249,38 @@ def main():
     if missing:
         print("\nTracks missing locally:")
 
-        for track in missing:
-            print(f"  - {', '.join(track['artists'])} - {track['title']}")
+        for entry in missing:
+            print(f"  - {', '.join(entry['artists'])} - {entry['title']}")
 
-        if yt_downloader.ask_yes_no(f"\nConvert and download {len(missing)} missing track(s)? (y/n): "):
-            ytmusic = spotify_converter.open_ytmusic()
-            videos, unmatched = spotify_converter.convert_tracks(ytmusic, missing)
+        not_found = [e for e in missing if not e.get("video")]
 
-            if unmatched:
-                print(f"[WARNING] {len(unmatched)} track(s) not found on YouTube Music.")
+        if not_found:
+            print(f"[WARNING] {len(not_found)} track(s) not found on YouTube Music.")
 
-            if videos:
-                ffmpeg_path = yt_downloader.find_ffmpeg()
-                script_directory = yt_downloader.get_script_directory()
-                download_run = history.start_run("sync_download", target=playlist["name"], total=len(videos))
-                failed = 0
+        if videos and yt_downloader.ask_yes_no(f"\nDownload {len(videos)} missing track(s)? (y/n): "):
+            ffmpeg_path = yt_downloader.find_ffmpeg()
+            script_directory = yt_downloader.get_script_directory()
+            download_run = history.start_run("sync_download", target=playlist["name"], total=len(videos))
+            failed = 0
 
-                for video in videos:
-                    print(f"[DOWNLOAD] {video['title']}\n")
-                    return_code = yt_downloader.download_video(
-                        video, folder, "%(title)s.%(ext)s", script_directory, ffmpeg_path
-                    )
+            for video in videos:
+                print(f"[DOWNLOAD] {video['title']}\n")
+                return_code = yt_downloader.download_video(
+                    video, folder, "%(title)s.%(ext)s", script_directory, ffmpeg_path
+                )
 
-                    if return_code != 0:
-                        failed += 1
+                if return_code != 0:
+                    failed += 1
 
-                    history.log_item(
-                        download_run,
-                        video["title"],
-                        "ok" if return_code == 0 else "failed",
-                        detail=video.get("url"),
-                    )
-                    print()
+                history.log_item(
+                    download_run,
+                    video["title"],
+                    "ok" if return_code == 0 else "failed",
+                    detail=video.get("url"),
+                )
+                print()
 
-                history.finish_run(download_run, "completed_with_errors" if failed else "completed")
+            history.finish_run(download_run, "completed_with_errors" if failed else "completed")
 
     print("\n[OK] Sync finished.")
 

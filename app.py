@@ -436,22 +436,21 @@ class UmupyApi:
 
             local_files = sync_playlists.build_local_index(folder)
             matched, missing, orphans = sync_playlists.compare_playlist_with_folder(playlist["tracks"], local_files)
+            healed = sync_playlists.heal_spotify_ids(matched)
 
             with self._lock:
                 self._sync_status["in_sync"] = len(matched)
                 self._sync_status["total"] = len(missing)
                 self._sync_status["phase"] = "matching"
-                self._sync_status["orphans"] = [
-                    {"filename": f["filename"], "path": f["path"]} for f in orphans
-                ]
 
             run_id = history.start_run("sync_check", target=playlist["name"], total=len(playlist["tracks"]))
 
-            for f in orphans:
-                history.log_item(run_id, f["filename"], "orphan", detail=f["path"])
+            if healed:
+                history.log_item(run_id, f"{healed} file(s) tagged with SPOTIFY_ID", "ok")
 
             ytmusic = spotify_converter.open_ytmusic()
             consecutive_failures = 0
+            missing_entries = []
 
             for track in missing:
                 label = f"{', '.join(track['artists'])} - {track['title']}"
@@ -469,23 +468,49 @@ class UmupyApi:
                             "Check your connection and try again."
                         )
 
-                entry = {
+                missing_entries.append({
                     "title": track["title"],
                     "artists": track["artists"],
                     "spotify_id": track["spotify_id"],
                     "video": video,
-                }
+                })
 
                 with self._lock:
                     self._sync_status["processed"] += 1
-                    self._sync_status["missing"].append(entry)
+
+            still_missing, reconciled = sync_playlists.reconcile_missing(missing_entries, orphans)
+
+            for entry, file in reconciled:
+                try:
+                    sync_playlists.embed_spotify_id(file["path"], entry["spotify_id"])
+                except Exception:
+                    pass
 
                 history.log_item(
                     run_id,
-                    label,
-                    "missing" if video else "not_found",
-                    detail=video["url"] if video else None,
+                    f"{', '.join(entry['artists'])} - {entry['title']}",
+                    "ok",
+                    detail=f"reconciled by YOUTUBE_ID with {file['filename']}",
                 )
+
+            for entry in still_missing:
+                label = f"{', '.join(entry['artists'])} - {entry['title']}"
+                history.log_item(
+                    run_id,
+                    label,
+                    "missing" if entry["video"] else "not_found",
+                    detail=entry["video"]["url"] if entry["video"] else None,
+                )
+
+            for f in orphans:
+                history.log_item(run_id, f["filename"], "orphan", detail=f["path"])
+
+            with self._lock:
+                self._sync_status["in_sync"] = len(matched) + len(reconciled)
+                self._sync_status["missing"] = still_missing
+                self._sync_status["orphans"] = [
+                    {"filename": f["filename"], "path": f["path"]} for f in orphans
+                ]
 
             history.finish_run(run_id, "completed")
 
