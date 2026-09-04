@@ -350,6 +350,7 @@ def download_video(video, output_directory, output_template, script_directory, f
 
     command = [
         *yt_dlp_command(),
+        "--extractor-args",          "youtube:player_client=default,web_embedded",
         "--format",                  "bestaudio[ext=m4a]/bestaudio/best",
         "--extract-audio",
         "--audio-format",            "mp3",
