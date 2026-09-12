@@ -2,6 +2,7 @@ import io
 import os
 import sys
 
+import pytest
 from mutagen.id3 import APIC
 from mutagen.mp3 import MP3
 from PIL import Image
@@ -72,12 +73,23 @@ def test_find_thumbnail_strategies():
 def test_embed_metadata_writes_apic_and_ids(make_mp3):
     path = make_mp3("track", youtube_id="old")
 
-    fix_artwork.embed_metadata(path, b"jpegdata", youtube_video_id="yt123", spotify_track_id="sp456")
+    fix_artwork.embed_metadata(path, b"jpegdata", {"YOUTUBE_ID": "yt123", "SPOTIFY_ID": "sp456", "SOUNDCLOUD_ID": None})
 
     assert len(read_apic(path)) == 1
     assert read_apic(path)[0].data == b"jpegdata"
     assert read_txxx(path, "YOUTUBE_ID") == "yt123"
     assert read_txxx(path, "SPOTIFY_ID") == "sp456"
+    assert read_txxx(path, "SOUNDCLOUD_ID") is None
+
+
+def test_embed_metadata_replaces_previous_provider_tags(make_mp3):
+    path = make_mp3("track", youtube_id="old", spotify_id="oldsp")
+
+    fix_artwork.embed_metadata(path, b"img", {"SOUNDCLOUD_ID": 123})
+
+    assert read_txxx(path, "YOUTUBE_ID") is None
+    assert read_txxx(path, "SPOTIFY_ID") is None
+    assert read_txxx(path, "SOUNDCLOUD_ID") == "123"
 
 
 def test_embed_metadata_on_untagged_file(tmp_path, sample_mp3_bytes):
@@ -94,7 +106,7 @@ def test_fix_audio_artwork_uses_thumbnail_and_removes_it(make_mp3, tmp_path, cap
     path = make_mp3("My Song")
     thumb = make_image(tmp_path / "My Song.png")
 
-    fix_artwork.fix_audio_artwork(path, "yt1", "sp1")
+    fix_artwork.fix_audio_artwork(path, {"YOUTUBE_ID": "yt1", "SPOTIFY_ID": "sp1"})
 
     assert not os.path.exists(thumb)
     assert Image.open(io.BytesIO(read_apic(path)[0].data)).size == (800, 800)
@@ -111,7 +123,7 @@ def test_fix_audio_artwork_rebuilds_from_existing_apic(make_mp3, capsys):
     audio.tags.add(APIC(encoding=3, mime="image/png", type=3, desc="", data=buffer.getvalue()))
     audio.save(v2_version=3)
 
-    fix_artwork.fix_audio_artwork(path, "yt2")
+    fix_artwork.fix_audio_artwork(path, {"YOUTUBE_ID": "yt2"})
 
     assert Image.open(io.BytesIO(read_apic(path)[0].data)).size == (800, 800)
     assert read_txxx(path, "YOUTUBE_ID") == "yt2"
@@ -152,26 +164,41 @@ def test_fix_audio_artwork_warns_when_thumbnail_cannot_be_removed(make_mp3, tmp_
     assert "Could not remove thumbnail" in capsys.readouterr().out
 
 
-def test_main_dispatches_by_argument_count(monkeypatch):
+def test_parse_arguments():
+    assert fix_artwork.parse_arguments([]) is None
+    assert fix_artwork.parse_arguments(["a.mp3"]) == ("a.mp3", {})
+    assert fix_artwork.parse_arguments(["a.mp3", "yt"]) == ("a.mp3", {"YOUTUBE_ID": "yt"})
+    assert fix_artwork.parse_arguments(["a.mp3", "yt", "sp"]) == ("a.mp3", {"YOUTUBE_ID": "yt", "SPOTIFY_ID": "sp"})
+    assert fix_artwork.parse_arguments(["a.mp3", "yt", "sp", "extra"]) is None
+    assert fix_artwork.parse_arguments(["a.mp3", "SOUNDCLOUD_ID", "123", "SPOTIFY_ID", "sp"]) == (
+        "a.mp3", {"SOUNDCLOUD_ID": "123", "SPOTIFY_ID": "sp"}
+    )
+    assert fix_artwork.parse_arguments(["a.mp3", "SOUNDCLOUD_ID"]) is None
+
+
+def test_main_dispatches_parsed_tags(monkeypatch):
     received = []
     monkeypatch.setattr(fix_artwork, "fix_audio_artwork", lambda *args: received.append(args))
 
     monkeypatch.setattr(sys, "argv", ["fix", "a.mp3", "yt", "sp"])
     fix_artwork.main()
-    monkeypatch.setattr(sys, "argv", ["fix", "a.mp3", "yt"])
+    monkeypatch.setattr(sys, "argv", ["fix", "a.mp3", "SOUNDCLOUD_ID", "9"])
     fix_artwork.main()
     monkeypatch.setattr(sys, "argv", ["fix", "a.mp3"])
     fix_artwork.main()
 
-    assert received == [("a.mp3", "yt", "sp"), ("a.mp3", "yt"), ("a.mp3",)]
+    assert received == [
+        ("a.mp3", {"YOUTUBE_ID": "yt", "SPOTIFY_ID": "sp"}),
+        ("a.mp3", {"SOUNDCLOUD_ID": "9"}),
+        ("a.mp3", {}),
+    ]
 
 
-def test_main_without_arguments_exits(monkeypatch, capsys):
+def test_main_with_invalid_arguments_exits(monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["fix"])
 
-    try:
+    with pytest.raises(SystemExit) as exit_info:
         fix_artwork.main()
-    except SystemExit as error:
-        assert error.code == 1
 
+    assert exit_info.value.code == 1
     assert "Usage" in capsys.readouterr().out

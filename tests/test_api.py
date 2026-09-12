@@ -528,11 +528,11 @@ def test_main_fix_artwork_mode(monkeypatch):
 
     received = []
     monkeypatch.setattr(fix_artwork, "fix_audio_artwork", lambda *args: received.append(args))
-    monkeypatch.setattr(sys, "argv", ["app", "--fix-artwork", "f.mp3", "yt", "sp"])
+    monkeypatch.setattr(sys, "argv", ["app", "--fix-artwork", "f.mp3", "SOUNDCLOUD_ID", "9", "SPOTIFY_ID", "sp"])
 
     app.main()
 
-    assert received == [("f.mp3", "yt", "sp")]
+    assert received == [("f.mp3", {"SOUNDCLOUD_ID": "9", "SPOTIFY_ID": "sp"})]
 
 
 def fake_webview_module(monkeypatch):

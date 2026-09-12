@@ -573,7 +573,7 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--fix-artwork":
         import fix_artwork
 
-        fix_artwork.fix_audio_artwork(*sys.argv[2:5])
+        fix_artwork.run(sys.argv[2:])
         return
 
     import webview

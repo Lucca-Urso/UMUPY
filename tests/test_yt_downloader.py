@@ -265,7 +265,21 @@ def test_download_video_passes_spotify_id_and_frozen_exec(fake_run, tmp_path, mo
 
     exec_argument = fake_run.last()[fake_run.last().index("--exec") + 1]
     assert "--fix-artwork" in exec_argument
-    assert exec_argument.endswith(" sp9")
+    assert exec_argument.endswith("%(filepath)q YOUTUBE_ID %(id)q SPOTIFY_ID sp9")
+
+
+def test_download_video_tags_soundcloud_source(fake_run, tmp_path):
+    yt_downloader.download_video(
+        {**VIDEO, "source": "soundcloud", "spotify_id": "sp9"}, str(tmp_path), "%(title)s.%(ext)s", "/dir", "/bin/ffmpeg"
+    )
+
+    exec_argument = fake_run.last()[fake_run.last().index("--exec") + 1]
+    assert exec_argument.endswith("%(filepath)q SOUNDCLOUD_ID %(id)q SPOTIFY_ID sp9")
+
+
+def test_post_download_arguments_edge_cases():
+    assert yt_downloader.post_download_arguments({"source": "unknown"}) == "%(filepath)q YOUTUBE_ID %(id)q"
+    assert yt_downloader.post_download_arguments({"source": "spotify", "spotify_id": "sp"}) == "%(filepath)q SPOTIFY_ID %(id)q"
 
 
 def test_download_video_drops_unsafe_spotify_id(fake_run, tmp_path):
@@ -275,7 +289,7 @@ def test_download_video_drops_unsafe_spotify_id(fake_run, tmp_path):
 
     exec_argument = fake_run.last()[fake_run.last().index("--exec") + 1]
     assert "rm -rf" not in exec_argument
-    assert exec_argument.endswith("%(id)q")
+    assert exec_argument.endswith("YOUTUBE_ID %(id)q")
 
 
 def test_is_safe_track_id():

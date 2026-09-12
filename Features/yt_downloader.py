@@ -322,17 +322,27 @@ def is_safe_track_id(value):
     return bool(value) and isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value) is not None
 
 
+def post_download_arguments(video):
+    from providers import TAGS
+
+    source_tag = TAGS.get(video.get("source") or "youtube", "YOUTUBE_ID")
+    arguments = f"%(filepath)q {source_tag} %(id)q"
+
+    if is_safe_track_id(video.get("spotify_id")) and source_tag != "SPOTIFY_ID":
+        arguments += f' SPOTIFY_ID {video["spotify_id"]}'
+
+    return arguments
+
+
 def download_video(video, output_directory, output_template, script_directory, ffmpeg_path, capture=False):
     output_path = os.path.join(output_directory, output_template)
     fix_artwork_script = get_fix_artwork_script()
+    arguments = post_download_arguments(video)
 
     if getattr(sys, "frozen", False):
-        post_download_command = f'"{sys.executable}" --fix-artwork %(filepath)q %(id)q'
+        post_download_command = f'"{sys.executable}" --fix-artwork {arguments}'
     else:
-        post_download_command = f'{sys.executable} "{fix_artwork_script}" %(filepath)q %(id)q'
-
-    if is_safe_track_id(video.get("spotify_id")):
-        post_download_command += f' {video["spotify_id"]}'
+        post_download_command = f'{sys.executable} "{fix_artwork_script}" {arguments}'
 
     images_before = list_image_files(output_directory)
 
