@@ -36,9 +36,11 @@ def test_npm_command_on_windows(monkeypatch):
 def test_setup_runs_every_step(commands, capsys):
     project.main(["--setup"])
 
+    npm = project.npm_command()
+    assert npm.startswith("/bin/npm")
     assert commands[0][0][-2:] == ["-r", "requirements-dev.txt"]
-    assert commands[1] == (["/bin/npm", "install"], project.UI_DIR)
-    assert commands[2] == (["/bin/npm", "run", "build"], project.UI_DIR)
+    assert commands[1] == ([npm, "install"], project.UI_DIR)
+    assert commands[2] == ([npm, "run", "build"], project.UI_DIR)
     assert commands[3][0][-1] == "pytest"
     assert "Setup complete" in capsys.readouterr().out
 
