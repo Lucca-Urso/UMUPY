@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+import re
 import subprocess
 
 import settings
@@ -26,11 +27,9 @@ def available_browsers():
 
         if name in CHROME_FAMILY and system == "Darwin":
             note = "Asks for your Mac password to unlock the browser cookies."
-        elif name == "chrome" and system == "Windows":
-            note = "Recent Chrome versions block cookie access on Windows."
+        elif name in CHROME_FAMILY and system == "Windows":
+            note = "Quit the browser completely before testing. Recent versions may still refuse; Firefox is the safest choice."
             recommended = False
-        elif name == "edge" and system == "Windows":
-            recommended = True
 
         browsers.append({"id": name, "label": LABELS[name], "recommended": recommended, "note": note})
 
@@ -44,15 +43,22 @@ def describe_cookie_test(browser, return_code, output):
     signed_in = any("Found YouTube account cookies" in line for line in lines)
 
     if return_code != 0 or error or "Extracted 0 cookies" in extracted:
-        hint = ""
         lowered = output.lower()
+        label = LABELS.get(browser, browser)
 
-        if browser == "chrome" and platform.system() == "Windows":
-            hint = " Chrome on Windows blocks cookie access; try Firefox or Edge."
+        if "could not copy" in lowered or "permission denied" in lowered:
+            hint = f" {label} is still running and locks its cookie file. Quit it completely (also from the system tray), then try again."
+        elif "decrypt" in lowered or "dpapi" in lowered or "app-bound" in lowered or "app bound" in lowered:
+            hint = f" Recent {label} versions on Windows encrypt cookies so only the browser can read them. Use Firefox instead."
         elif "could not find" in lowered or "not found" in lowered:
             hint = " Is that browser installed on this computer?"
+        elif browser in CHROME_FAMILY and platform.system() == "Windows":
+            hint = f" Chromium-based browsers are unreliable on Windows; Firefox is the safest choice."
+        else:
+            hint = ""
 
-        return {"ok": False, "error": (error or "Cookie extraction failed") + hint}
+        message = re.sub(r"\.?\s*[Ss]ee https?://\S+.*$", "", error).rstrip(" .") + "." if error else "Cookie extraction failed."
+        return {"ok": False, "error": message + hint}
 
     if not signed_in:
         return {"ok": False, "error": f"{extracted or 'Cookies read'}, but no YouTube login was found. Sign in to YouTube in {browser} first."}

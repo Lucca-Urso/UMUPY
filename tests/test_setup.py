@@ -73,9 +73,10 @@ def test_available_browsers_per_platform(monkeypatch):
     monkeypatch.setattr(platform, "system", lambda: "Windows")
     win = setup_api.available_browsers()
     assert "safari" not in [b["id"] for b in win]
+    assert [b["id"] for b in win][0] == "firefox"
     chrome = next(b for b in win if b["id"] == "chrome")
-    assert chrome["recommended"] is False and "block" in chrome["note"]
-    assert next(b for b in win if b["id"] == "edge")["recommended"] is True
+    assert chrome["recommended"] is False and "Quit the browser" in chrome["note"]
+    assert next(b for b in win if b["id"] == "edge")["recommended"] is False
 
 
 def test_describe_cookie_test():
@@ -92,15 +93,24 @@ def test_describe_cookie_test():
     assert zero["ok"] is False
 
     empty = setup_api.describe_cookie_test("firefox", 1, "")
-    assert empty["error"] == "Cookie extraction failed"
+    assert empty["error"] == "Cookie extraction failed."
 
 
-def test_describe_cookie_test_windows_chrome_hint(monkeypatch):
+def test_describe_cookie_test_windows_hints(monkeypatch):
     monkeypatch.setattr(platform, "system", lambda: "Windows")
 
-    result = setup_api.describe_cookie_test("chrome", 1, "ERROR: Failed to decrypt")
+    locked = setup_api.describe_cookie_test(
+        "chrome", 1, "ERROR: Could not copy Chrome cookie database. See https://github.com/yt-dlp/yt-dlp/issues/7271 for more info"
+    )
+    assert locked["error"].startswith("ERROR: Could not copy Chrome cookie database.")
+    assert "Quit it completely" in locked["error"]
+    assert "github.com" not in locked["error"]
 
-    assert "try Firefox or Edge" in result["error"]
+    encrypted = setup_api.describe_cookie_test("edge", 1, "ERROR: Failed to decrypt with DPAPI")
+    assert "Use Firefox instead" in encrypted["error"]
+
+    generic = setup_api.describe_cookie_test("brave", 1, "ERROR: something odd")
+    assert "Firefox is the safest choice" in generic["error"]
 
 
 def test_setup_status(api, project_dir, monkeypatch):
