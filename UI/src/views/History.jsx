@@ -145,9 +145,9 @@ export default function History({ onBack }) {
                     {item.detail && <p className="truncate text-xs text-zinc-600">{item.detail}</p>}
                     {item.error && <p className="mt-0.5 text-xs break-words text-[#ff6961]">{item.error}</p>}
                   </div>
-                  {item.status === 'not_found' && (
+                  {['not_found', 'retrying', 'blocked', 'paused', 'skipped', 'missing', 'orphan'].includes(item.status) && (
                     <span className="rounded-full bg-[#ff9f0a]/15 px-2.5 py-0.5 text-[11px] font-medium text-[#ff9f0a]">
-                      Not found
+                      {item.status.replace('_', ' ')}
                     </span>
                   )}
                 </div>

@@ -228,6 +228,32 @@ def test_list_image_files_and_cleanup(tmp_path, capsys):
     assert "Removed residual thumbnail" in capsys.readouterr().out
 
 
+def test_remove_residual_thumbnails_only_touches_own_thumbnail(tmp_path, capsys):
+    (tmp_path / "Other Song.jpg").write_bytes(b"")
+    (tmp_path / "My Song.jpg").write_bytes(b"")
+
+    yt_downloader.remove_residual_thumbnails(str(tmp_path), set(), "My Song")
+
+    assert sorted(os.listdir(tmp_path)) == ["Other Song.jpg"]
+
+    yt_downloader.remove_residual_thumbnails(str(tmp_path), set(), "Unrelated Title")
+
+    assert sorted(os.listdir(tmp_path)) == ["Other Song.jpg"]
+
+
+def test_download_video_failure_keeps_other_thumbnails(fake_run, tmp_path):
+    def fail(command):
+        (tmp_path / "Song.jpg").write_bytes(b"")
+        (tmp_path / "Concurrent Track.jpg").write_bytes(b"")
+        return type("R", (), {"returncode": 1, "stdout": "", "stderr": "ERROR: x"})()
+
+    fake_run.queue(fail)
+
+    yt_downloader.download_video(VIDEO, str(tmp_path), "%(title)s.%(ext)s", "/dir", "/bin/ffmpeg", capture=True)
+
+    assert sorted(os.listdir(tmp_path)) == ["Concurrent Track.jpg"]
+
+
 def test_remove_residual_thumbnails_handles_os_error(tmp_path, monkeypatch, capsys):
     (tmp_path / "new.jpg").write_bytes(b"")
     monkeypatch.setattr(os, "remove", lambda _: (_ for _ in ()).throw(OSError("locked")))

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 import app
+import download_engine
 import history
 import library
 import spotify_converter
@@ -30,6 +31,14 @@ class SyncThread:
 @pytest.fixture
 def api(project_dir, monkeypatch):
     monkeypatch.setattr(threading, "Thread", SyncThread)
+
+    def sequential_run(self, tracks):
+        for item in tracks:
+            self.process(item)
+
+        return list(self.results)
+
+    monkeypatch.setattr(download_engine.DownloadEngine, "run", sequential_run)
     return UmupyApi()
 
 
@@ -116,6 +125,44 @@ def test_download_worker_records_results(api, project_dir, monkeypatch):
     runs = history.list_runs()
     assert runs[0]["operation"] == "spotify_download"
     assert runs[0]["status"] == "completed_with_errors"
+
+
+def test_download_worker_logs_pause_and_fallback(api, project_dir, monkeypatch):
+    monkeypatch.setattr(yt_downloader, "find_ffmpeg", lambda: "/bin/ffmpeg")
+    outcomes = {
+        ("v1", "youtube"): [(1, "ERROR: HTTP Error 429: Too Many Requests"), (1, "ERROR: unavailable")],
+        ("sc1", "soundcloud"): [(0, None)],
+    }
+    seen_status = []
+
+    def fake_download(video, *args, **kwargs):
+        seen_status.append(api.get_status())
+        return outcomes[(video["id"], video["source"])].pop(0)
+
+    monkeypatch.setattr(yt_downloader, "download_video", fake_download)
+    monkeypatch.setattr(download_engine.DownloadEngine, "pause", lambda self, reason: self.emit("paused", {"reason": reason, "seconds": 30}) or 30)
+    monkeypatch.setattr(
+        app.matching, "find_download_source",
+        lambda t, clients, order=None: ({"id": "sc1", "title": "SC", "url": "https://sc/1", "source": "soundcloud", "score": 80}, []),
+    )
+
+    api.start_download([VIDEO])
+    status = api.get_status()
+
+    assert status["items"][0]["ok"] is True
+    assert status["items"][0]["provider"] == "soundcloud"
+    assert status["active"] == []
+    assert seen_status[0]["current"] == "Song"
+    assert seen_status[2]["active"][0]["retrying"] is True
+    detail = history.get_run(history.list_runs()[0]["id"])
+    assert [(i["title"], i["status"]) for i in detail["items"]] == [
+        ("Downloads paused", "paused"),
+        ("Song", "blocked"),
+        ("Song", "failed"),
+        ("Song", "retrying"),
+        ("Song", "ok"),
+    ]
+    assert detail["items"][4]["detail"] == "https://sc/1 via soundcloud"
 
 
 def test_download_worker_unknown_operation_label(api, project_dir, monkeypatch):

@@ -307,8 +307,15 @@ def list_image_files(directory):
     }
 
 
-def remove_residual_thumbnails(output_directory, images_before):
+def remove_residual_thumbnails(output_directory, images_before, title=None):
+    import fix_artwork
+
     residual_images = list_image_files(output_directory) - images_before
+
+    if title:
+        index = {os.path.splitext(os.path.basename(path))[0].lower(): path for path in residual_images}
+        own = fix_artwork.find_thumbnail(title, index)
+        residual_images = {own} if own else set()
 
     for image_path in residual_images:
         try:
@@ -334,7 +341,10 @@ def post_download_arguments(video):
     return arguments
 
 
-def download_video(video, output_directory, output_template, script_directory, ffmpeg_path, capture=False):
+DEFAULT_SLEEP_ARGUMENTS = ["--sleep-requests", "2", "--sleep-interval", "5", "--max-sleep-interval", "10"]
+
+
+def download_video(video, output_directory, output_template, script_directory, ffmpeg_path, capture=False, sleep_arguments=None):
     output_path = os.path.join(output_directory, output_template)
     fix_artwork_script = get_fix_artwork_script()
     arguments = post_download_arguments(video)
@@ -361,9 +371,9 @@ def download_video(video, output_directory, output_template, script_directory, f
         "--no-abort-on-error",
         "--retries",                 "10",
         "--fragment-retries",        "10",
-        "--sleep-requests",          "2",
-        "--sleep-interval",          "5",
-        "--max-sleep-interval",      "10",
+        "--concurrent-fragments",    "3",
+        "--http-chunk-size",         "10M",
+        *(sleep_arguments if sleep_arguments is not None else DEFAULT_SLEEP_ARGUMENTS),
         "--output",                  output_path,
         "--exec",                    post_download_command,
         *cookies_arguments(),
@@ -386,7 +396,7 @@ def download_video(video, output_directory, output_template, script_directory, f
         error_text = None
 
     if return_code != 0:
-        remove_residual_thumbnails(output_directory, images_before)
+        remove_residual_thumbnails(output_directory, images_before, video.get("title"))
 
     return (return_code, error_text) if capture else return_code
 

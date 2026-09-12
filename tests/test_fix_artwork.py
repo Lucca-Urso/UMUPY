@@ -130,13 +130,14 @@ def test_fix_audio_artwork_rebuilds_from_existing_apic(make_mp3, capsys):
     assert "rebuilt from existing APIC" in capsys.readouterr().out
 
 
-def test_fix_audio_artwork_without_any_artwork(make_mp3, capsys):
+def test_fix_audio_artwork_without_any_artwork_still_writes_tags(make_mp3, capsys):
     path = make_mp3("Bare")
 
-    fix_artwork.fix_audio_artwork(path)
+    fix_artwork.fix_audio_artwork(path, {"YOUTUBE_ID": "yt7"})
 
     assert read_apic(path) == []
-    assert "[WARNING] No artwork found." in capsys.readouterr().out
+    assert read_txxx(path, "YOUTUBE_ID") == "yt7"
+    assert "No artwork found. Tags written without artwork." in capsys.readouterr().out
 
 
 def test_fix_audio_artwork_missing_file(tmp_path, capsys):

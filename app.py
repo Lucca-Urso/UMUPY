@@ -18,6 +18,7 @@ import yt_downloader
 import history
 import library
 import matching
+import download_engine
 
 
 OPERATION_LABEL = {
@@ -34,6 +35,7 @@ class UmupyApi:
         self._spotify_reset()
         self._sync_reset()
         self._rekordbox = None
+        self._engine = None
 
     def _reset(self):
         self._status = {
@@ -140,52 +142,69 @@ class UmupyApi:
         return output_directory
 
     def _download_worker(self, videos, output_directory, playlist_name, operation):
-        script_directory = yt_downloader.get_script_directory()
         ffmpeg_path = yt_downloader.find_ffmpeg()
         run_id = history.start_run(
             OPERATION_LABEL.get(operation, "youtube_download"),
             target=playlist_name or "Single videos",
             total=len(videos),
         )
-        failed_count = 0
 
-        for video in videos:
-            with self._lock:
-                self._status["current"] = video["title"]
+        def on_event(kind, payload):
+            if kind == "finished":
+                history.log_item(
+                    run_id,
+                    payload["title"],
+                    "ok" if payload["ok"] else "failed",
+                    detail=f"{payload['url']} via {payload['provider']}",
+                    error=payload["error"],
+                )
 
-            return_code, error_text = yt_downloader.download_video(
-                video, output_directory, "%(title)s.%(ext)s", script_directory, ffmpeg_path, capture=True
-            )
+                with self._lock:
+                    self._status["items"].append(dict(payload))
 
-            if return_code != 0:
-                failed_count += 1
+            elif kind == "attempt":
+                status = {"failed": "failed", "blocked": "blocked", "retrying": "retrying", "error": "failed", "not_found": "not_found"}
+                history.log_item(
+                    run_id,
+                    payload["track"]["title"],
+                    status.get(payload["status"], payload["status"]),
+                    detail=f"{payload['status']} on {payload['provider']}",
+                    error=payload.get("error"),
+                )
 
-            history.log_item(
-                run_id,
-                video["title"],
-                "ok" if return_code == 0 else "failed",
-                detail=video.get("url"),
-                error=error_text,
-            )
+            elif kind == "paused":
+                history.log_item(
+                    run_id, "Downloads paused", "paused",
+                    detail=f"waiting {payload['seconds']}s after a rate limit or bot check",
+                    error=payload["reason"],
+                )
 
-            with self._lock:
-                self._status["items"].append({
-                    "id": video["id"],
-                    "title": video["title"],
-                    "url": video.get("url"),
-                    "ok": return_code == 0,
-                    "error": error_text,
-                })
+        engine = download_engine.DownloadEngine(output_directory, ffmpeg_path, on_event=on_event)
 
+        with self._lock:
+            self._engine = engine
+
+        results = engine.run(videos)
+        failed_count = sum(1 for result in results if not result["ok"])
         history.finish_run(run_id, "completed_with_errors" if failed_count else "completed")
 
         with self._lock:
+            self._engine = None
             self._status["running"] = False
             self._status["current"] = None
 
     def get_status(self):
         with self._lock:
-            return {**self._status, "items": list(self._status["items"])}
+            engine = self._engine
+            status = {**self._status, "items": list(self._status["items"])}
+
+        snapshot = engine.snapshot() if engine else {"active": [], "paused": False, "paused_reason": None, "resume_in": 0}
+        status.update(snapshot)
+
+        if status["running"] and snapshot["active"]:
+            status["current"] = snapshot["active"][0]["title"]
+
+        return status
 
     def open_output_directory(self):
         with self._lock:

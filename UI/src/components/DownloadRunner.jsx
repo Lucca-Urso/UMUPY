@@ -80,11 +80,23 @@ export default function DownloadRunner({ videos, playlistName, onReset, resetLab
             style={{ width: `${status?.total ? (status.items.length / status.total) * 100 : 0}%` }}
           />
         </div>
-        {status?.current && (
-          <p className="mt-4 flex items-center gap-2.5 text-sm text-zinc-400">
-            <Spinner className="h-4 w-4" />
-            <span className="truncate">{status.current}</span>
-          </p>
+        {status?.paused && (
+          <div className="mt-4 rounded-xl border border-[#ff9f0a]/30 bg-[#ff9f0a]/10 px-4 py-3 text-sm text-[#ff9f0a]">
+            Paused to avoid a block. Resuming in {status.resume_in}s.
+          </div>
+        )}
+        {status?.active?.length > 0 && (
+          <div className="mt-4 flex flex-col gap-2">
+            {status.active.map((item) => (
+              <p key={item.id} className="flex items-center gap-2.5 text-sm text-zinc-400">
+                <Spinner className="h-4 w-4" />
+                <span className="truncate">
+                  {item.retrying ? `Retrying on ${item.provider}: ` : ''}
+                  {item.title}
+                </span>
+              </p>
+            ))}
+          </div>
         )}
       </Card>
 

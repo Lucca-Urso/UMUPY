@@ -73,12 +73,12 @@ def embed_metadata(audio_path, image_data, tags=None):
     if audio_file.tags is None:
         audio_file.add_tags()
 
-    audio_file.tags.delall("APIC")
-
     for tag in KNOWN_TAGS:
         audio_file.tags.delall(f"TXXX:{tag}")
 
-    audio_file.tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="", data=image_data))
+    if image_data is not None:
+        audio_file.tags.delall("APIC")
+        audio_file.tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="", data=image_data))
 
     for tag, value in (tags or {}).items():
         if value:
@@ -123,7 +123,8 @@ def fix_audio_artwork(audio_path, tags=None):
             artwork_list = audio_file.tags.getall("APIC") if audio_file.tags else []
 
             if not artwork_list:
-                print("[WARNING] No artwork found.")
+                embed_metadata(audio_path, None, tags)
+                print("[WARNING] No artwork found. Tags written without artwork.")
                 return
 
             processed_image = process_thumbnail(Image.open(io.BytesIO(artwork_list[0].data)))
