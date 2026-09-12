@@ -97,6 +97,10 @@ def test_embed_and_heal_spotify_ids(make_mp3, tmp_path, sample_mp3_bytes):
     raw.write_bytes(sample_mp3_bytes)
     broken = tmp_path / "broken.mp3"
     broken.write_bytes(b"x")
+    sync_playlists.embed_spotify_id(str(raw), "direct")
+    assert sync_playlists.build_local_index(str(tmp_path))
+    from mutagen.mp3 import MP3
+    MP3(str(raw)).delete()
 
     pairs = [
         (track("s1", "A"), {"path": tagged, "spotify_id": "old"}),
@@ -113,6 +117,48 @@ def test_embed_and_heal_spotify_ids(make_mp3, tmp_path, sample_mp3_bytes):
     assert index["tagged"] == "old"
     assert index["untagged"] == "s2"
     assert index["raw"] == "s3"
+
+
+def test_track_key_handles_legacy_and_provider_tracks():
+    assert sync_playlists.track_key({"spotify_id": "s1", "title": "x"}) == ("spotify", "s1")
+    assert sync_playlists.track_key({"title": "x", "id": "y1"}) == ("youtube", "y1")
+    assert sync_playlists.track_key({"source": "soundcloud", "id": "sc1"}) == ("soundcloud", "sc1")
+
+
+def test_compare_matches_by_provider_tag():
+    tracks = [
+        {"source": "soundcloud", "id": "sc1", "title": "Alpha Beta", "artists": ["A"]},
+        {"source": "youtube", "id": "yt1", "title": "Gamma Delta", "artists": ["B"]},
+        {"source": "youtube", "id": None, "title": "No Id Track", "artists": ["C"]},
+    ]
+    files = [
+        {**local("first"), "soundcloud_id": "sc1"},
+        local("second", youtube_id="yt1"),
+    ]
+
+    matched, missing, orphans = sync_playlists.compare_playlist_with_folder(tracks, files)
+
+    assert [(t["id"], f["filename"]) for t, f in matched] == [("sc1", "first"), ("yt1", "second")]
+    assert [t["title"] for t in missing] == ["No Id Track"]
+    assert orphans == []
+
+
+def test_heal_ids_embeds_provider_tag(make_mp3, tmp_path):
+    from mutagen.mp3 import MP3
+
+    untagged = make_mp3("sc")
+    already = make_mp3("yt", youtube_id="yt1")
+    pairs = [
+        ({"source": "soundcloud", "id": "sc1", "title": "T", "artists": []}, {"path": untagged, "soundcloud_id": None}),
+        ({"source": "youtube", "id": "yt1", "title": "T", "artists": []}, {"path": already, "youtube_id": "yt1"}),
+        ({"source": "youtube", "id": None, "title": "T", "artists": []}, {"path": already, "youtube_id": None}),
+    ]
+
+    assert sync_playlists.heal_ids(pairs) == 1
+    assert pairs[0][1]["soundcloud_id"] == "sc1"
+    frames = [f for f in MP3(untagged).tags.getall("TXXX") if f.desc == "SOUNDCLOUD_ID"]
+    assert frames[0].text[0] == "sc1"
+    assert sync_playlists.heal_spotify_ids is sync_playlists.heal_ids
 
 
 def test_delete_files(tmp_path):

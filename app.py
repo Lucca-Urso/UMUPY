@@ -55,6 +55,7 @@ class UmupyApi:
             "playlist": None,
             "matched": [],
             "unmatched": [],
+            "sources": [],
             "current": None,
             "error": None,
         }
@@ -70,6 +71,7 @@ class UmupyApi:
             "in_sync": 0,
             "orphans": [],
             "missing": [],
+            "sources": [],
             "current": None,
             "error": None,
         }
@@ -230,15 +232,7 @@ class UmupyApi:
         }
 
     def start_spotify_analysis(self, url, scan_folders=None):
-        with self._lock:
-            self._spotify_reset()
-            self._spotify_status["running"] = True
-            self._spotify_status["phase"] = "fetching"
-
-        worker = threading.Thread(target=self._spotify_worker, args=(url, scan_folders), daemon=True)
-        worker.start()
-
-        return True
+        return self.start_analysis([url], scan_folders)
 
     def _match_with_fallback(self, track, clients, run_id, status):
         label = matching.track_label(track)
@@ -269,27 +263,93 @@ class UmupyApi:
 
         return match
 
-    def _spotify_worker(self, url, scan_folders):
+    def _resolve_sources(self, urls, status):
+        import providers
+
+        sources = []
+        tracks = []
+        seen = set()
+        clients = {}
+
+        for url in urls:
+            name = providers.detect(url)
+            entry = {"url": url, "provider": name, "name": None, "total": 0, "error": None}
+
+            if not name:
+                entry["error"] = "Unsupported URL. Paste a YouTube, Spotify or SoundCloud link."
+            else:
+                provider = providers.get(name)
+
+                if name == "spotify":
+                    if "spotify" not in clients:
+                        clients["spotify"] = provider.open_client()
+
+                    result = provider.resolve(url, clients["spotify"])
+                else:
+                    result = provider.resolve(url)
+
+                entry["name"] = result["name"]
+                entry["total"] = len(result["tracks"])
+                entry["error"] = result["error"]
+
+                for track in result["tracks"]:
+                    key = (track["source"], track["id"])
+
+                    if key not in seen:
+                        seen.add(key)
+                        tracks.append(track)
+
+            sources.append(entry)
+
+            with self._lock:
+                status["sources"] = [dict(source) for source in sources]
+
+        return sources, tracks
+
+    def _describe_sources(self, sources):
+        names = [source["name"] or source["provider"] or source["url"] for source in sources]
+        return " + ".join(names)
+
+    def start_analysis(self, urls, scan_folders=None):
+        urls = [urls] if isinstance(urls, str) else list(urls)
+
+        with self._lock:
+            self._spotify_reset()
+            self._spotify_status["running"] = True
+            self._spotify_status["phase"] = "fetching"
+
+        worker = threading.Thread(target=self._analysis_worker, args=(urls, scan_folders), daemon=True)
+        worker.start()
+
+        return True
+
+    def _analysis_worker(self, urls, scan_folders):
         import spotify_converter
 
         run_id = None
 
         try:
             index = self._build_scan_index(scan_folders)
+            sources, tracks = self._resolve_sources(urls, self._spotify_status)
+            name = self._describe_sources(sources)
+            run_id = history.start_run("playlist_analysis", target=name, total=len(tracks))
 
-            spotify = spotify_converter.open_spotify()
-            playlist = spotify_converter.fetch_playlist(spotify, url)
-            run_id = history.start_run("spotify_convert", target=playlist["name"], total=len(playlist["tracks"]))
+            for source in sources:
+                if source["error"]:
+                    history.log_item(run_id, source["url"], "failed", detail=source["provider"], error=source["error"])
+
+            if not tracks:
+                raise Exception(next((s["error"] for s in sources if s["error"]), "No tracks found in the given links."))
 
             with self._lock:
-                self._spotify_status["playlist"] = playlist["name"]
-                self._spotify_status["total"] = len(playlist["tracks"])
+                self._spotify_status["playlist"] = name
+                self._spotify_status["total"] = len(tracks)
                 self._spotify_status["phase"] = "matching"
 
             clients = {"youtube": spotify_converter.open_ytmusic()}
             consecutive_failures = 0
 
-            for track in playlist["tracks"]:
+            for track in tracks:
                 origin = {"title": track["title"], "artists": track["artists"]}
 
                 try:
@@ -314,7 +374,7 @@ class UmupyApi:
                     self._spotify_status["processed"] += 1
 
                     if video:
-                        video["duplicate"] = index.contains("spotify", track["spotify_id"])
+                        video["duplicate"] = index.contains(track["source"], track["id"])
                         video["origin"] = origin
                         self._spotify_status["matched"].append(video)
                     else:
@@ -333,7 +393,7 @@ class UmupyApi:
                 self._spotify_status["error"] = str(error)
 
             if run_id is None:
-                run_id = history.start_run("spotify_convert", target=url)
+                run_id = history.start_run("playlist_analysis", target=" + ".join(urls))
 
             history.log_item(run_id, "Analysis", "failed", error=str(error))
             history.finish_run(run_id, "failed")
@@ -447,45 +507,55 @@ class UmupyApi:
 
         return result[0] if isinstance(result, (list, tuple)) else result
 
-    def start_sync_analysis(self, url, folder):
+    def start_sync_analysis(self, urls, folder):
+        urls = [urls] if isinstance(urls, str) else list(urls)
+
         with self._lock:
             self._sync_reset()
             self._sync_status["running"] = True
             self._sync_status["phase"] = "fetching"
             self._sync_status["folder"] = folder
 
-        worker = threading.Thread(target=self._sync_worker, args=(url, folder), daemon=True)
+        worker = threading.Thread(target=self._sync_worker, args=(urls, folder), daemon=True)
         worker.start()
 
         return True
 
-    def _sync_worker(self, url, folder):
+    def _sync_worker(self, urls, folder):
+        import providers
         import spotify_converter
         import sync_playlists
 
         run_id = None
 
         try:
-            spotify = spotify_converter.open_spotify()
-            playlist = spotify_converter.fetch_playlist(spotify, url)
+            sources, tracks = self._resolve_sources(urls, self._sync_status)
+            name = self._describe_sources(sources)
+
+            if not tracks:
+                raise Exception(next((s["error"] for s in sources if s["error"]), "No tracks found in the given links."))
 
             with self._lock:
-                self._sync_status["playlist"] = playlist["name"]
+                self._sync_status["playlist"] = name
                 self._sync_status["phase"] = "comparing"
 
             local_files = sync_playlists.build_local_index(folder)
-            matched, missing, orphans = sync_playlists.compare_playlist_with_folder(playlist["tracks"], local_files)
-            healed = sync_playlists.heal_spotify_ids(matched)
+            matched, missing, orphans = sync_playlists.compare_playlist_with_folder(tracks, local_files)
+            healed = sync_playlists.heal_ids(matched)
 
             with self._lock:
                 self._sync_status["in_sync"] = len(matched)
                 self._sync_status["total"] = len(missing)
                 self._sync_status["phase"] = "matching"
 
-            run_id = history.start_run("sync_check", target=playlist["name"], total=len(playlist["tracks"]))
+            run_id = history.start_run("sync_check", target=name, total=len(tracks))
+
+            for source in sources:
+                if source["error"]:
+                    history.log_item(run_id, source["url"], "failed", detail=source["provider"], error=source["error"])
 
             if healed:
-                history.log_item(run_id, f"{healed} file(s) tagged with SPOTIFY_ID", "ok")
+                history.log_item(run_id, f"{healed} file(s) tagged with their provider id", "ok")
 
             clients = {"youtube": spotify_converter.open_ytmusic()}
             consecutive_failures = 0
@@ -508,7 +578,9 @@ class UmupyApi:
                 missing_entries.append({
                     "title": track["title"],
                     "artists": track["artists"],
-                    "spotify_id": track["spotify_id"],
+                    "source": track["source"],
+                    "id": track["id"],
+                    "spotify_id": track.get("spotify_id"),
                     "video": video,
                 })
 
@@ -519,7 +591,7 @@ class UmupyApi:
 
             for entry, file in reconciled:
                 try:
-                    sync_playlists.embed_spotify_id(file["path"], entry["spotify_id"])
+                    sync_playlists.embed_tag(file["path"], providers.TAGS[entry["source"]], entry["id"])
                 except Exception:
                     pass
 
@@ -562,7 +634,7 @@ class UmupyApi:
                 self._sync_status["error"] = str(error)
 
             if run_id is None:
-                run_id = history.start_run("sync_check", target=url)
+                run_id = history.start_run("sync_check", target=" + ".join(urls))
 
             history.log_item(run_id, "Analysis", "failed", error=str(error))
             history.finish_run(run_id, "failed")

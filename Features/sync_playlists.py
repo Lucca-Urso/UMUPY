@@ -15,19 +15,25 @@ def build_local_index(folder):
     return library.build_index([folder]).files
 
 
+def track_key(track):
+    source = track.get("source") or ("spotify" if track.get("spotify_id") else "youtube")
+    track_id = track.get("id") if track.get("source") else track.get("spotify_id") or track.get("id")
+    return source, track_id
+
+
 def compare_playlist_with_folder(tracks, local_files):
     from thefuzz import fuzz
 
     remaining = list(local_files)
-    by_spotify_id = {f["spotify_id"]: f for f in remaining if f["spotify_id"]}
 
     matched = []
     missing = []
 
     for track in tracks:
-        file = by_spotify_id.get(track["spotify_id"])
+        source, track_id = track_key(track)
+        file = next((f for f in remaining if track_id and f.get(f"{source}_id") == track_id), None)
 
-        if file and file in remaining:
+        if file:
             matched.append((track, file))
             remaining.remove(file)
             continue
@@ -71,7 +77,7 @@ def reconcile_missing(missing_entries, orphans):
     return still_missing, reconciled
 
 
-def embed_spotify_id(path, spotify_id):
+def embed_tag(path, tag, value):
     from mutagen.id3 import TXXX
     from mutagen.mp3 import MP3
 
@@ -80,26 +86,38 @@ def embed_spotify_id(path, spotify_id):
     if audio.tags is None:
         audio.add_tags()
 
-    audio.tags.delall("TXXX:SPOTIFY_ID")
-    audio.tags.add(TXXX(encoding=3, desc="SPOTIFY_ID", text=[spotify_id]))
+    audio.tags.delall(f"TXXX:{tag}")
+    audio.tags.add(TXXX(encoding=3, desc=tag, text=[str(value)]))
     audio.save(v2_version=3)
 
 
-def heal_spotify_ids(matched_pairs):
+def embed_spotify_id(path, spotify_id):
+    embed_tag(path, "SPOTIFY_ID", spotify_id)
+
+
+def heal_ids(matched_pairs):
+    from providers import TAGS
+
     healed = 0
 
     for track, file in matched_pairs:
-        if file["spotify_id"]:
+        source, track_id = track_key(track)
+        field = f"{source}_id"
+
+        if file.get(field) or not track_id:
             continue
 
         try:
-            embed_spotify_id(file["path"], track["spotify_id"])
-            file["spotify_id"] = track["spotify_id"]
+            embed_tag(file["path"], TAGS[source], track_id)
+            file[field] = track_id
             healed += 1
         except Exception:
             continue
 
     return healed
+
+
+heal_spotify_ids = heal_ids
 
 
 def is_inside_folder(path, folder):

@@ -6,6 +6,7 @@ const OPERATION_LABELS = {
   youtube_download: 'YouTube Download',
   spotify_download: 'Spotify Download',
   spotify_convert: 'Spotify Conversion',
+  playlist_analysis: 'Playlist Analysis',
   rekordbox_create: 'RekordBox Playlists',
   sync_check: 'Sync Check',
   sync_delete: 'Sync Delete',

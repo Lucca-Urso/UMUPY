@@ -43,6 +43,8 @@ def api(project_dir, monkeypatch):
 
 
 VIDEO = {"id": "v1", "title": "Song", "url": "https://youtube/v1"}
+SPOTIFY_URL = "https://open.spotify.com/playlist/abc"
+SC_URL = "https://soundcloud.com/artist/sets/mix"
 
 
 def test_scan_paths_and_index(api, project_dir, monkeypatch):
@@ -227,7 +229,7 @@ def test_spotify_worker_matches_and_marks_duplicates(api, project_dir, monkeypat
     prepare_spotify(monkeypatch, [spotify_track(s) for s in videos], lambda _, t: videos[t["spotify_id"]])
     monkeypatch.setattr(library, "build_index", lambda _: fake_index(youtube=["yt1"], spotify=["s3"]))
 
-    api.start_spotify_analysis("url", ["__all__"])
+    api.start_spotify_analysis(SPOTIFY_URL, ["__all__"])
     status = api.get_spotify_status()
 
     assert status["running"] is False
@@ -248,7 +250,7 @@ def test_spotify_worker_search_errors_and_abort(api, project_dir, monkeypatch):
     monkeypatch.setattr(soundcloud_provider, "search", searcher)
     monkeypatch.setattr(spotify_converter, "MAX_CONSECUTIVE_FAILURES", 2)
 
-    api.start_spotify_analysis("url")
+    api.start_spotify_analysis(SPOTIFY_URL)
     status = api.get_spotify_status()
 
     assert "Network failed 2 times" in status["error"]
@@ -269,7 +271,7 @@ def test_spotify_worker_single_search_error_continues(api, project_dir, monkeypa
 
     prepare_spotify(monkeypatch, [spotify_track("0"), spotify_track("1")], searcher)
 
-    api.start_spotify_analysis("url")
+    api.start_spotify_analysis(SPOTIFY_URL)
     status = api.get_spotify_status()
 
     assert status["error"] is None
@@ -290,7 +292,7 @@ def test_spotify_worker_falls_back_to_soundcloud_and_logs_each_attempt(api, proj
 
     monkeypatch.setattr(api, "_match_with_fallback", spy)
 
-    api.start_spotify_analysis("url")
+    api.start_spotify_analysis(SPOTIFY_URL)
     status = api.get_spotify_status()
 
     assert status["matched"][0]["source"] == "soundcloud"
@@ -332,7 +334,7 @@ def test_match_with_fallback_reports_retry_state(api, project_dir, monkeypatch):
 def test_spotify_worker_credentials_missing(api, project_dir, monkeypatch):
     monkeypatch.setattr(spotify_converter, "open_spotify", lambda: (_ for _ in ()).throw(SystemExit(1)))
 
-    api.start_spotify_analysis("url")
+    api.start_spotify_analysis(SPOTIFY_URL)
 
     assert api.get_spotify_status()["error"] == "Spotify credentials not found or invalid."
     assert history.list_runs() == []
@@ -345,7 +347,7 @@ def test_spotify_worker_credentials_missing_after_run_started(api, project_dir, 
     prepare_spotify(monkeypatch, [spotify_track("0")], lambda *_: None)
     monkeypatch.setattr(spotify_converter, "open_ytmusic", searcher)
 
-    api.start_spotify_analysis("url")
+    api.start_spotify_analysis(SPOTIFY_URL)
 
     assert history.list_runs()[0]["status"] == "failed"
 
@@ -353,12 +355,12 @@ def test_spotify_worker_credentials_missing_after_run_started(api, project_dir, 
 def test_spotify_worker_generic_error_before_run(api, project_dir, monkeypatch):
     monkeypatch.setattr(spotify_converter, "open_spotify", lambda: (_ for _ in ()).throw(RuntimeError("bad url")))
 
-    api.start_spotify_analysis("url")
+    api.start_spotify_analysis(SPOTIFY_URL)
 
     assert api.get_spotify_status()["error"] == "bad url"
     run = history.list_runs()[0]
     assert run["status"] == "failed"
-    assert run["target"] == "url"
+    assert run["target"] == SPOTIFY_URL
 
 
 def fake_webview(monkeypatch, result):
@@ -503,7 +505,7 @@ def prepare_sync(monkeypatch, tracks, local_files, searcher):
     monkeypatch.setattr(youtube_provider, "search", searcher)
     monkeypatch.setattr(soundcloud_provider, "search", lambda client, track: None)
     monkeypatch.setattr(sync_playlists, "build_local_index", lambda _: local_files)
-    monkeypatch.setattr(sync_playlists, "heal_spotify_ids", lambda pairs: 1)
+    monkeypatch.setattr(sync_playlists, "heal_ids", lambda pairs: 1)
     monkeypatch.setattr(sync_playlists, "embed_spotify_id", lambda *_: (_ for _ in ()).throw(OSError("ro")))
 
 
@@ -514,7 +516,7 @@ def test_sync_worker_full_flow(api, project_dir, monkeypatch):
     videos = {"s2": {"id": "ytX", "title": "X", "url": "ux"}, "s3": {"id": "ytQ", "title": "Q", "url": "uq"}, "s4": None}
     prepare_sync(monkeypatch, tracks, local_files, lambda _, t: videos[t["spotify_id"]])
 
-    api.start_sync_analysis("url", "/music")
+    api.start_sync_analysis(SPOTIFY_URL, "/music")
     status = api.get_sync_status()
 
     assert status["error"] is None
@@ -539,7 +541,7 @@ def test_sync_worker_search_failure_abort(api, project_dir, monkeypatch):
     monkeypatch.setattr(soundcloud_provider, "search", searcher)
     monkeypatch.setattr(spotify_converter, "MAX_CONSECUTIVE_FAILURES", 2)
 
-    api.start_sync_analysis("url", "/music")
+    api.start_sync_analysis(SPOTIFY_URL, "/music")
 
     assert "Network failed 2 times" in api.get_sync_status()["error"]
     assert history.list_runs()[0]["status"] == "failed"
@@ -558,17 +560,99 @@ def test_sync_worker_single_failure_continues(api, project_dir, monkeypatch):
 
     prepare_sync(monkeypatch, [spotify_track("s1", "Aaa"), spotify_track("s2", "Bbb")], [], searcher)
 
-    api.start_sync_analysis("url", "/music")
+    api.start_sync_analysis(SPOTIFY_URL, "/music")
     status = api.get_sync_status()
 
     assert status["error"] is None
     assert len(status["missing"]) == 2
 
 
+def test_analysis_combines_spotify_and_soundcloud_sources(api, project_dir, monkeypatch):
+    prepare_spotify(monkeypatch, [spotify_track("s1", "Only Spotify")], lambda _, t: {"id": "yt1", "title": "YT", "url": "u"})
+    sc_tracks = [
+        {"id": "sc1", "title": "SC One", "artists": ["A"], "duration": 10, "url": "https://sc/1", "source": "soundcloud"},
+        {"id": "sc1", "title": "SC One dup", "artists": ["A"], "duration": 10, "url": "https://sc/1", "source": "soundcloud"},
+    ]
+    monkeypatch.setattr(soundcloud_provider, "resolve", lambda url: {"name": "Mix SC", "tracks": sc_tracks, "error": None})
+    monkeypatch.setattr(library, "build_index", lambda _: fake_index(soundcloud=["sc1"]))
+
+    api.start_analysis([SPOTIFY_URL, SC_URL, "https://example.com/nope"], ["__all__"])
+    status = api.get_spotify_status()
+
+    assert status["error"] is None
+    assert status["playlist"] == "Mix + Mix SC + https://example.com/nope"
+    assert status["total"] == 2
+    assert [s["provider"] for s in status["sources"]] == ["spotify", "soundcloud", None]
+    assert "Unsupported URL" in status["sources"][2]["error"]
+    assert [(v["source"], v["duplicate"]) for v in status["matched"]] == [("youtube", False), ("soundcloud", True)]
+    run = history.list_runs()[0]
+    assert run["operation"] == "playlist_analysis"
+    items = history.get_run(run["id"])["items"]
+    assert items[0]["status"] == "failed"
+    assert items[0]["title"] == "https://example.com/nope"
+
+
+def test_analysis_with_only_invalid_url_fails(api, project_dir):
+    api.start_analysis("https://example.com/nope")
+
+    status = api.get_spotify_status()
+    assert "Unsupported URL" in status["error"]
+    assert history.list_runs()[0]["status"] == "failed"
+
+
+def test_analysis_reports_empty_provider_result(api, project_dir, monkeypatch):
+    monkeypatch.setattr(soundcloud_provider, "resolve", lambda url: {"name": None, "tracks": [], "error": None})
+
+    api.start_analysis([SC_URL])
+
+    assert api.get_spotify_status()["error"] == "No tracks found in the given links."
+
+
+def test_sync_with_multiple_sources_and_source_errors(api, project_dir, monkeypatch):
+    prepare_sync(monkeypatch, [spotify_track("s1", "Aaa")], [local_file("a", spotify_id="s1")], lambda *_: None)
+    monkeypatch.setattr(soundcloud_provider, "resolve", lambda url: {"name": None, "tracks": [], "error": "ERROR: private set"})
+
+    api.start_sync_analysis([SPOTIFY_URL, SC_URL], "/music")
+    status = api.get_sync_status()
+
+    assert status["error"] is None
+    assert status["playlist"] == "Mix + soundcloud"
+    assert status["in_sync"] == 1
+    items = history.get_run(history.list_runs()[0]["id"])["items"]
+    assert items[0]["status"] == "failed"
+    assert items[0]["error"] == "ERROR: private set"
+
+
+def test_sync_reconciles_soundcloud_fallback_and_embeds_tag(api, project_dir, monkeypatch):
+    tracks = [spotify_track("s1", "Zzz Unique Name")]
+    local_files = [{**local_file("scfile"), "soundcloud_id": "sc9"}]
+    prepare_sync(monkeypatch, tracks, local_files, lambda *_: None)
+    monkeypatch.setattr(soundcloud_provider, "search", lambda _, t: {"id": "sc9", "title": "SC", "url": "u", "source": "soundcloud", "score": 80})
+    embedded = []
+    monkeypatch.setattr(sync_playlists, "embed_tag", lambda path, tag, value: embedded.append((path, tag, value)))
+
+    api.start_sync_analysis(SPOTIFY_URL, "/music")
+    status = api.get_sync_status()
+
+    assert status["in_sync"] == 1
+    assert status["missing"] == []
+    assert embedded == [("/music/scfile.mp3", "SPOTIFY_ID", "s1")]
+    items = history.get_run(history.list_runs()[0]["id"])["items"]
+    assert any("reconciled by SOUNDCLOUD_ID" in (i["detail"] or "") for i in items)
+
+
+def test_sync_with_no_tracks_fails(api, project_dir, monkeypatch):
+    monkeypatch.setattr(soundcloud_provider, "resolve", lambda url: {"name": None, "tracks": [], "error": None})
+
+    api.start_sync_analysis([SC_URL], "/music")
+
+    assert api.get_sync_status()["error"] == "No tracks found in the given links."
+
+
 def test_sync_worker_credentials_missing(api, project_dir, monkeypatch):
     monkeypatch.setattr(spotify_converter, "open_spotify", lambda: (_ for _ in ()).throw(SystemExit(1)))
 
-    api.start_sync_analysis("url", "/music")
+    api.start_sync_analysis(SPOTIFY_URL, "/music")
 
     assert api.get_sync_status()["error"] == "Spotify credentials not found or invalid."
 
@@ -577,7 +661,7 @@ def test_sync_worker_credentials_missing_after_run(api, project_dir, monkeypatch
     prepare_sync(monkeypatch, [spotify_track("s1", "Aaa")], [], lambda *_: None)
     monkeypatch.setattr(spotify_converter, "open_ytmusic", lambda: (_ for _ in ()).throw(SystemExit(1)))
 
-    api.start_sync_analysis("url", "/music")
+    api.start_sync_analysis(SPOTIFY_URL, "/music")
 
     assert history.list_runs()[0]["status"] == "failed"
 
@@ -585,10 +669,10 @@ def test_sync_worker_credentials_missing_after_run(api, project_dir, monkeypatch
 def test_sync_worker_generic_error(api, project_dir, monkeypatch):
     monkeypatch.setattr(spotify_converter, "open_spotify", lambda: (_ for _ in ()).throw(RuntimeError("oops")))
 
-    api.start_sync_analysis("url", "/music")
+    api.start_sync_analysis(SPOTIFY_URL, "/music")
 
     assert api.get_sync_status()["error"] == "oops"
-    assert history.list_runs()[0]["target"] == "url"
+    assert history.list_runs()[0]["target"] == SPOTIFY_URL
 
 
 def test_sync_delete(api, project_dir, tmp_path):
