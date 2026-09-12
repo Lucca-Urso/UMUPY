@@ -31,6 +31,17 @@ def get_token_cache_path():
     return os.path.join(yt_downloader.get_dependencies_directory(), ".spotify_token_cache")
 
 
+def restrict_permissions(path):
+    if os.name != "posix" or not os.path.isfile(path):
+        return False
+
+    try:
+        os.chmod(path, 0o600)
+        return True
+    except OSError:
+        return False
+
+
 def load_credentials():
     credentials_path = get_credentials_path()
 
@@ -40,6 +51,8 @@ def load_credentials():
         print(f"then save the credentials as {credentials_path} with the format:")
         print('{"client_id": "...", "client_secret": "...", "redirect_uri": "http://127.0.0.1:8888/callback"}')
         sys.exit(1)
+
+    restrict_permissions(credentials_path)
 
     with open(credentials_path) as credentials_file:
         credentials = json.load(credentials_file)
@@ -75,7 +88,9 @@ def open_spotify():
         cache_path=get_token_cache_path(),
     )
 
-    return spotipy.Spotify(auth_manager=auth_manager, requests_timeout=20, retries=5)
+    spotify = spotipy.Spotify(auth_manager=auth_manager, requests_timeout=20, retries=5)
+    restrict_permissions(get_token_cache_path())
+    return spotify
 
 
 def open_ytmusic():

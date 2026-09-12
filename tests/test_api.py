@@ -478,17 +478,32 @@ def test_sync_worker_generic_error(api, project_dir, monkeypatch):
 
 
 def test_sync_delete(api, project_dir, tmp_path):
-    existing = tmp_path / "a.mp3"
+    folder = tmp_path / "synced"
+    folder.mkdir()
+    existing = folder / "a.mp3"
     existing.write_bytes(b"")
-    api._sync_status["folder"] = str(tmp_path)
+    outside = tmp_path / "outside.mp3"
+    outside.write_bytes(b"")
+    api._sync_status["folder"] = str(folder)
 
-    results = api.sync_delete([str(existing), str(tmp_path / "missing.mp3")])
+    results = api.sync_delete([str(existing), str(folder / "missing.mp3"), str(outside)])
 
-    assert [r["ok"] for r in results] == [True, False]
+    assert [r["ok"] for r in results] == [True, False, False]
+    assert outside.exists()
     run = history.list_runs()[0]
     assert run["operation"] == "sync_delete"
     assert run["status"] == "completed_with_errors"
-    assert run["target"] == str(tmp_path)
+    assert run["target"] == str(folder)
+
+
+def test_sync_delete_without_analyzed_folder_refuses(api, project_dir, tmp_path):
+    target = tmp_path / "a.mp3"
+    target.write_bytes(b"")
+
+    results = api.sync_delete([str(target)])
+
+    assert results[0]["ok"] is False
+    assert target.exists()
 
 
 def test_main_yt_dlp_mode(monkeypatch):

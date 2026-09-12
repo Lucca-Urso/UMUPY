@@ -141,10 +141,26 @@ def heal_spotify_ids(matched_pairs):
     return healed
 
 
-def delete_files(paths):
+def is_inside_folder(path, folder):
+    if not folder:
+        return False
+
+    try:
+        real_folder = os.path.realpath(folder)
+        real_path = os.path.realpath(path)
+        return os.path.commonpath([real_folder, real_path]) == real_folder and real_path != real_folder
+    except ValueError:
+        return False
+
+
+def delete_files(paths, folder=None):
     results = []
 
     for path in paths:
+        if folder is not None and not is_inside_folder(path, folder):
+            results.append({"path": path, "ok": False, "error": "Path is outside the synced folder"})
+            continue
+
         try:
             os.remove(path)
             results.append({"path": path, "ok": True, "error": None})
@@ -235,7 +251,7 @@ def main():
         if yt_downloader.ask_yes_no(f"\nDelete {len(orphans)} orphan file(s)? (y/n): "):
             delete_run = history.start_run("sync_delete", target=folder, total=len(orphans))
 
-            for result in delete_files([f["path"] for f in orphans]):
+            for result in delete_files([f["path"] for f in orphans], folder):
                 history.log_item(
                     delete_run,
                     os.path.basename(result["path"]),

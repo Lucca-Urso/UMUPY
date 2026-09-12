@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -68,7 +69,15 @@ def find_cookies():
 
     for file_name in sorted(os.listdir(dependencies_directory)):
         if "cookies" in file_name.lower() and file_name.lower().endswith(".txt"):
-            return os.path.join(dependencies_directory, file_name)
+            cookies_path = os.path.join(dependencies_directory, file_name)
+
+            if os.name == "posix":
+                try:
+                    os.chmod(cookies_path, 0o600)
+                except OSError:
+                    pass
+
+            return cookies_path
 
     return None
 
@@ -334,6 +343,10 @@ def remove_residual_thumbnails(output_directory, images_before):
             print(f"[WARNING] Could not remove residual thumbnail: {error}")
 
 
+def is_safe_track_id(value):
+    return bool(value) and isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value) is not None
+
+
 def download_video(video, output_directory, output_template, script_directory, ffmpeg_path, capture=False):
     output_path = os.path.join(output_directory, output_template)
     fix_artwork_script = get_fix_artwork_script()
@@ -343,7 +356,7 @@ def download_video(video, output_directory, output_template, script_directory, f
     else:
         post_download_command = f'{sys.executable} "{fix_artwork_script}" %(filepath)q %(id)q'
 
-    if video.get("spotify_id"):
+    if is_safe_track_id(video.get("spotify_id")):
         post_download_command += f' {video["spotify_id"]}'
 
     images_before = list_image_files(output_directory)

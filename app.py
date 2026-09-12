@@ -550,7 +550,7 @@ class UmupyApi:
             playlist = self._sync_status.get("playlist")
 
         run_id = history.start_run("sync_delete", target=playlist or folder, total=len(paths))
-        results = sync_playlists.delete_files(paths)
+        results = sync_playlists.delete_files(paths, folder or "")
 
         for result in results:
             history.log_item(

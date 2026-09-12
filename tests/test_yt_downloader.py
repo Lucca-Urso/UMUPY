@@ -68,6 +68,19 @@ def test_find_cookies(project_dir):
     assert yt_downloader.find_cookies() == str(dependencies / "youtube_cookies.txt")
     assert yt_downloader.cookies_arguments() == ["--cookies", str(dependencies / "youtube_cookies.txt")]
 
+    if os.name == "posix":
+        assert oct(os.stat(dependencies / "youtube_cookies.txt").st_mode & 0o777) == "0o600"
+
+
+def test_find_cookies_ignores_chmod_failure(project_dir, monkeypatch):
+    dependencies = project_dir / "Dependencies"
+    dependencies.mkdir()
+    (dependencies / "cookies.txt").write_text("x")
+    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr(os, "chmod", lambda *_: (_ for _ in ()).throw(OSError("ro")))
+
+    assert yt_downloader.find_cookies() == str(dependencies / "cookies.txt")
+
 
 def test_ask_yes_no(monkeypatch):
     answers = iter(["maybe", "Y", "n"])
@@ -253,6 +266,26 @@ def test_download_video_passes_spotify_id_and_frozen_exec(fake_run, tmp_path, mo
     exec_argument = fake_run.last()[fake_run.last().index("--exec") + 1]
     assert "--fix-artwork" in exec_argument
     assert exec_argument.endswith(" sp9")
+
+
+def test_download_video_drops_unsafe_spotify_id(fake_run, tmp_path):
+    yt_downloader.download_video(
+        {**VIDEO, "spotify_id": "abc; rm -rf /"}, str(tmp_path), "%(title)s.%(ext)s", "/dir", "/bin/ffmpeg"
+    )
+
+    exec_argument = fake_run.last()[fake_run.last().index("--exec") + 1]
+    assert "rm -rf" not in exec_argument
+    assert exec_argument.endswith("%(id)q")
+
+
+def test_is_safe_track_id():
+    assert yt_downloader.is_safe_track_id("3n3Ppam7vgaVa1iaRUc9Lp") is True
+    assert yt_downloader.is_safe_track_id("dQw4w9WgXcQ") is True
+    assert yt_downloader.is_safe_track_id("") is False
+    assert yt_downloader.is_safe_track_id(None) is False
+    assert yt_downloader.is_safe_track_id(123) is False
+    assert yt_downloader.is_safe_track_id("a b") is False
+    assert yt_downloader.is_safe_track_id("x" * 65) is False
 
 
 def test_download_video_failure_reports_error_and_cleans(fake_run, tmp_path, monkeypatch):

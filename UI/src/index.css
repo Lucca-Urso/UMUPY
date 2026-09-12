@@ -8,6 +8,10 @@ body {
   background: #09090b;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  user-select: text;
+}
+
+button, [role="button"], label {
   user-select: none;
   cursor: default;
 }

@@ -125,6 +125,39 @@ def test_delete_files(tmp_path):
     assert not existing.exists()
 
 
+def test_delete_files_refuses_paths_outside_folder(tmp_path):
+    folder = tmp_path / "synced"
+    folder.mkdir()
+    inside = folder / "a.mp3"
+    inside.write_bytes(b"")
+    outside = tmp_path / "outside.mp3"
+    outside.write_bytes(b"")
+    traversal = folder / ".." / "outside.mp3"
+
+    results = sync_playlists.delete_files([str(inside), str(outside), str(traversal), str(folder)], str(folder))
+
+    assert [r["ok"] for r in results] == [True, False, False, False]
+    assert all("outside the synced folder" in r["error"] for r in results[1:])
+    assert not inside.exists()
+    assert outside.exists()
+
+
+def test_delete_files_with_empty_folder_refuses_everything(tmp_path):
+    target = tmp_path / "a.mp3"
+    target.write_bytes(b"")
+
+    results = sync_playlists.delete_files([str(target)], "")
+
+    assert results[0]["ok"] is False
+    assert target.exists()
+
+
+def test_is_inside_folder_handles_invalid_paths(monkeypatch):
+    monkeypatch.setattr(os.path, "commonpath", lambda _: (_ for _ in ()).throw(ValueError("mixed drives")))
+
+    assert sync_playlists.is_inside_folder("C:/a", "D:/b") is False
+
+
 def prepare_main(monkeypatch, tmp_path, tracks, local_files, argv=None):
     monkeypatch.setattr(sys, "argv", argv or ["prog", "https://open.spotify.com/playlist/x", str(tmp_path)])
     monkeypatch.setattr(spotify_converter, "open_spotify", lambda: "spotify")

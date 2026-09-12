@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 
 import pytest
@@ -92,6 +93,23 @@ def test_load_credentials_accepts_aliases(project_dir):
 
     assert credentials["client_id"] == "id"
     assert credentials["client_secret"] == "s"
+
+    if os.name == "posix":
+        mode = os.stat(project_dir / "Dependencies" / "spotify_credentials.json").st_mode & 0o777
+        assert oct(mode) == "0o600"
+
+
+def test_restrict_permissions_edge_cases(tmp_path, monkeypatch):
+    assert spotify_converter.restrict_permissions(str(tmp_path / "missing")) is False
+
+    target = tmp_path / "f"
+    target.write_text("x")
+    monkeypatch.setattr(os, "name", "nt")
+    assert spotify_converter.restrict_permissions(str(target)) is False
+
+    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr(os, "chmod", lambda *_: (_ for _ in ()).throw(OSError("ro")))
+    assert spotify_converter.restrict_permissions(str(target)) is False
 
 
 def test_load_credentials_missing_key(project_dir, capsys):
