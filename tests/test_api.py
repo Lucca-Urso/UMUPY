@@ -412,6 +412,13 @@ def test_rekordbox_analyze_no_playlists(api, monkeypatch):
     assert api.rekordbox_analyze("/x") == {"error": "Invalid XML file: boom"}
 
 
+def test_rekordbox_xml_example(api):
+    result = api.rekordbox_xml_example()
+
+    assert "<COLLECTION>" in result["example"]
+    assert len(result["rules"]) == 4
+
+
 def test_rekordbox_analyze_database_open_failure(api, monkeypatch):
     import rekordbox_playlist_creator as rpc
 

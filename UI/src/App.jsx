@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Home from './views/Home'
 import Downloader from './views/Downloader'
-import Rekordbox from './views/Rekordbox'
+import PlaylistBuilder from './views/PlaylistBuilder'
 import History from './views/History'
 import Synchronizer from './views/Synchronizer'
 
@@ -14,7 +14,7 @@ export default function App() {
       {view === 'home' && <Home onNavigate={setView} />}
       {view === 'downloader' && <Downloader onBack={goHome} />}
       {view === 'synchronizer' && <Synchronizer onBack={goHome} />}
-      {view === 'builder' && <Rekordbox onBack={goHome} />}
+      {view === 'builder' && <PlaylistBuilder onBack={goHome} />}
       {view === 'history' && <History onBack={goHome} />}
     </div>
   )

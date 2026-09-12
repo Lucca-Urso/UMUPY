@@ -13,6 +13,17 @@ class PlaylistBuilderApi:
     def rekordbox_select_source(self, mode):
         return base.pick_path(mode)
 
+    def rekordbox_xml_example(self):
+        return {
+            "example": rpc.XML_MINIMUM_EXAMPLE,
+            "rules": [
+                "COLLECTION lists the tracks: each TRACK needs a TrackID and a Name (or a Location pointing to the file).",
+                "Artist is optional; other attributes are ignored.",
+                "PLAYLISTS holds NODE elements with Type=\"1\" and a Name; each TRACK inside references a TrackID through Key.",
+                "Files exported by RekordBox already follow this format.",
+            ],
+        }
+
     def _open_rekordbox(self):
         if self._rekordbox is not None:
             try:
