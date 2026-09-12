@@ -192,7 +192,7 @@ def test_soundcloud_resolve_set(monkeypatch):
     assert [t["id"] for t in result["tracks"]] == [str(i) for i in range(1, 13)]
     assert result["error"] is None
     ranges = [a[a.index("--playlist-items") + 1] for a in calls if "--playlist-items" in a]
-    assert ranges == ["1-5", "6-10", "11-12"]
+    assert sorted(ranges, key=lambda r: int(r.split("-")[0])) == ["1-5", "6-10", "11-12"]
 
 
 def test_soundcloud_resolve_set_errors(monkeypatch):

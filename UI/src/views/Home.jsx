@@ -1,3 +1,6 @@
+import { useEffect, useState } from 'react'
+import { call } from '../api'
+
 const features = [
   {
     id: 'downloader',
@@ -47,9 +50,31 @@ const features = [
 ]
 
 export default function Home({ onNavigate }) {
+  const [setup, setSetup] = useState(null)
+
+  useEffect(() => {
+    call('setup_status').then(setSetup)
+  }, [])
+
+  const toolsMissing = setup && (!setup.ffmpeg.ok || !setup.deno.ok)
+
   return (
     <div className="mx-auto flex min-h-screen max-w-4xl flex-col px-8">
-      <header className="pt-20 pb-14 text-center">
+      <div className="flex justify-end pt-6">
+        <button
+          onClick={() => onNavigate('setup')}
+          className="flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.05] px-4 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-white/[0.2] hover:bg-white/[0.1]"
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+          </svg>
+          Setup
+          {toolsMissing && <span className="h-2 w-2 rounded-full bg-[#ff9f0a]" />}
+        </button>
+      </div>
+
+      <header className="pt-10 pb-14 text-center">
         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-[20px] bg-gradient-to-br from-[#0a84ff] to-[#5e5ce6] shadow-lg shadow-[#0a84ff]/20">
           <svg viewBox="0 0 24 24" className="h-8 w-8 fill-none stroke-white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 18V6l10-2v11.5" />
@@ -61,6 +86,15 @@ export default function Home({ onNavigate }) {
         <p className="mt-3 text-lg text-zinc-400">Urso Music Uploader Python</p>
         <p className="mt-1 text-sm text-zinc-500">Your music pipeline, from the web to the booth.</p>
       </header>
+
+      {toolsMissing && (
+        <button
+          onClick={() => onNavigate('setup')}
+          className="mb-6 rounded-xl border border-[#ff9f0a]/30 bg-[#ff9f0a]/10 px-4 py-3 text-left text-sm text-[#ff9f0a] transition-colors hover:bg-[#ff9f0a]/15"
+        >
+          Some audio tools are missing, so downloads will fail. Open Setup to see what to install.
+        </button>
+      )}
 
       <main className="grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2">
         {features.map((feature) => (
@@ -78,13 +112,7 @@ export default function Home({ onNavigate }) {
         ))}
       </main>
 
-      <footer className="mt-auto flex items-center justify-center gap-3 pb-6 text-xs text-zinc-600">
-        <span>UMUPY 3.0</span>
-        <span>·</span>
-        <button onClick={() => onNavigate('setup')} className="text-zinc-500 transition-colors hover:text-zinc-200">
-          Setup
-        </button>
-      </footer>
+      <footer className="mt-auto pb-6 text-center text-xs text-zinc-600">UMUPY 3.0</footer>
     </div>
   )
 }
