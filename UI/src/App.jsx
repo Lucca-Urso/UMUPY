@@ -3,7 +3,7 @@ import Home from './views/Home'
 import Downloader from './views/Downloader'
 import Rekordbox from './views/Rekordbox'
 import History from './views/History'
-import Sync from './views/Sync'
+import Synchronizer from './views/Synchronizer'
 
 export default function App() {
   const [view, setView] = useState('home')
@@ -13,7 +13,7 @@ export default function App() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       {view === 'home' && <Home onNavigate={setView} />}
       {view === 'downloader' && <Downloader onBack={goHome} />}
-      {view === 'synchronizer' && <Sync onBack={goHome} />}
+      {view === 'synchronizer' && <Synchronizer onBack={goHome} />}
       {view === 'builder' && <Rekordbox onBack={goHome} />}
       {view === 'history' && <History onBack={goHome} />}
     </div>

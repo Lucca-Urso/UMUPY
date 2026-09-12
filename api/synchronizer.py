@@ -28,16 +28,17 @@ class SynchronizerApi:
     def select_folder(self):
         return base.pick_path("folder")
 
-    def start_sync_analysis(self, urls, folder=None, folder_factory=None):
+    def start_sync_analysis(self, urls, folder=None, folder_factory=None, scan_folders=None):
         urls = [urls] if isinstance(urls, str) else list(urls)
         self._sync.reset(running=True, phase="fetching", folder=folder)
-        base.start_thread(self._sync_worker, urls, folder, folder_factory)
+        base.start_thread(self._sync_worker, urls, folder, folder_factory, scan_folders)
         return True
 
-    def _sync_worker(self, urls, folder, folder_factory=None):
+    def _sync_worker(self, urls, folder, folder_factory=None, scan_folders=None):
         status = self._sync
 
         def work(context):
+            index = base.build_scan_index(scan_folders)
             found, tracks = sources.resolve_sources(urls, status)
             name = sources.describe_sources(found)
 
@@ -74,6 +75,10 @@ class SynchronizerApi:
 
             for track in missing:
                 video, _ = matcher.match(track)
+
+                if video:
+                    video["duplicate"] = index.contains(track["source"], track["id"])
+
                 missing_entries.append({
                     "title": track["title"],
                     "artists": track["artists"],

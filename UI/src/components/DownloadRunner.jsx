@@ -2,7 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import { call } from '../api'
 import { Button, Card, Spinner, StatusIcon } from './ui'
 
-export default function DownloadRunner({ videos, playlistName, onReset, resetLabel = 'New download', operation = 'youtube', outputDirectory = null }) {
+export default function DownloadRunner({
+  videos,
+  playlistName,
+  onReset,
+  resetLabel = 'New download',
+  operation = 'youtube',
+  outputDirectory = null,
+  starter = null,
+  onDone = null,
+  doneActions = null,
+}) {
   const [status, setStatus] = useState(null)
   const [outputDir, setOutputDir] = useState(null)
   const [done, setDone] = useState(false)
@@ -11,15 +21,16 @@ export default function DownloadRunner({ videos, playlistName, onReset, resetLab
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const dir = await call('start_download', videos, playlistName, operation, outputDirectory)
+      const dir = starter ? await starter() : await call('start_download', videos, playlistName, operation, outputDirectory)
       if (cancelled) return
-      setOutputDir(dir)
+      setOutputDir(typeof dir === 'string' ? dir : dir?.error || null)
       pollRef.current = setInterval(async () => {
         const s = await call('get_status')
         setStatus(s)
         if (!s.running && s.items.length >= videos.length) {
           clearInterval(pollRef.current)
           setDone(true)
+          if (onDone) onDone(s)
         }
       }, 800)
     })()
@@ -59,7 +70,7 @@ export default function DownloadRunner({ videos, playlistName, onReset, resetLab
           <Button variant="secondary" onClick={() => call('open_output_directory')}>
             Open folder
           </Button>
-          <Button onClick={onReset}>{resetLabel}</Button>
+          {doneActions || <Button onClick={onReset}>{resetLabel}</Button>}
         </div>
       </div>
     )

@@ -29,9 +29,9 @@ class ChainApi:
     def __init__(self):
         self._chain = base.JobStatus(**CHAIN_DEFAULTS)
 
-    def start_chain(self, urls, folder=None):
+    def start_chain(self, urls, folder=None, scan_folders=None):
         self._chain.reset(running=True, stage="analyzing", folder=folder)
-        return self.start_sync_analysis(urls, folder or None, default_sync_folder)
+        return self.start_sync_analysis(urls, folder or None, default_sync_folder, scan_folders)
 
     def start_chain_download(self, videos, rekordbox=True):
         folder = self._sync.get("folder")

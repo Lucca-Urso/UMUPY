@@ -733,6 +733,15 @@ def test_sync_reconciles_soundcloud_fallback_and_embeds_tag(api, project_dir, mo
     assert any("reconciled by SOUNDCLOUD_ID" in (i["detail"] or "") for i in items)
 
 
+def test_sync_marks_missing_videos_found_elsewhere_as_duplicates(api, project_dir, monkeypatch):
+    prepare_sync(monkeypatch, [spotify_track("s1", "Aaa")], [], lambda _, t: {"id": "yt1", "title": "A", "url": "u"})
+    monkeypatch.setattr(library, "build_index", lambda _: fake_index(spotify=["s1"]))
+
+    api.start_sync_analysis(SPOTIFY_URL, "/music", None, ["__all__"])
+
+    assert api.get_sync_status()["missing"][0]["video"]["duplicate"] is True
+
+
 def test_sync_with_no_tracks_fails(api, project_dir, monkeypatch):
     monkeypatch.setattr(soundcloud_provider, "resolve", lambda url: {"name": None, "tracks": [], "error": None})
 
