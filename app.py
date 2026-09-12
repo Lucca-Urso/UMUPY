@@ -430,7 +430,10 @@ class UmupyApi:
     def rekordbox_analyze(self, source_path):
         import rekordbox_playlist_creator as rpc
 
-        playlists = rpc.load_playlists_from_source(source_path)
+        try:
+            playlists = rpc.load_playlists_from_source(source_path)
+        except ValueError as error:
+            return {"error": str(error)}
 
         if not playlists:
             return {"error": "No playlists found in the selected source."}

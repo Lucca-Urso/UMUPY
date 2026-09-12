@@ -114,6 +114,65 @@ def test_parse_xml_without_sections(tmp_path):
     assert rpc.parse_xml_playlists(path) == []
 
 
+LENIENT_XML = """<library>
+  <collection>
+    <track id="a" title="Lower Case Song" artists="Someone"/>
+    <TRACK TrackID="b" Location="file://localhost/Users/me/Music/From%20Location.mp3"/>
+    <TRACK TrackID="c"/>
+    <TRACK Name="No id at all"/>
+  </collection>
+  <playlists>
+    <node name="Typeless With Tracks"><TRACK Key="a"/><TRACK Key="b"/><TRACK Key="c"/><TRACK Key="zzz"/></node>
+    <node name="Typeless Empty Folder"/>
+    <playlist><track Name="Inline Track" Artist="Inline Artist"/></playlist>
+    <NODE Type="0" Name="Folder"><NODE Type="1" Name="Nested"><TRACK Key="a"/></NODE></NODE>
+  </playlists>
+</library>
+"""
+
+
+def test_parse_xml_minimum_schema_is_lenient(tmp_path):
+    path = tmp_path / "lenient.xml"
+    path.write_text(LENIENT_XML)
+
+    playlists = rpc.parse_xml_playlists(path)
+
+    assert playlists == [
+        {"name": "Typeless With Tracks", "tracks": [
+            {"title": "Lower Case Song", "artist": "Someone"},
+            {"title": "From Location", "artist": ""},
+        ]},
+        {"name": "Imported", "tracks": [{"title": "Inline Track", "artist": "Inline Artist"}]},
+        {"name": "Nested", "tracks": [{"title": "Lower Case Song", "artist": "Someone"}]},
+    ]
+
+
+def test_parse_xml_collection_only_becomes_one_playlist(tmp_path):
+    path = tmp_path / "my_export.xml"
+    path.write_text('<COLLECTION><TRACK TrackID="1" Name="Only"/><TRACK TrackID="1" Name="Dup id"/></COLLECTION>')
+
+    assert rpc.parse_xml_playlists(path) == [{"name": "my export", "tracks": [{"title": "Only", "artist": ""}]}]
+
+
+def test_parse_xml_invalid_file_raises_friendly_error(tmp_path):
+    path = tmp_path / "broken.xml"
+    path.write_text("<DJ_PLAYLISTS><COLLECTION>")
+
+    with pytest.raises(ValueError, match="Invalid XML file"):
+        rpc.parse_xml_playlists(path)
+
+
+def test_xml_helpers():
+    from xml.etree.ElementTree import fromstring
+
+    assert rpc.title_from_location("file://localhost/Music/My%20Song.mp3") == "My Song"
+    assert rpc.title_from_location("/plain/path/Track.flac") == "Track"
+    assert rpc.attribute(fromstring('<T name="" Title="X"/>'), "Name", "Title") == "X"
+    assert rpc.attribute(fromstring("<T/>"), "Name", default="d") == "d"
+    assert rpc.track_from_element(fromstring("<T/>")) is None
+    assert "<COLLECTION>" in rpc.XML_MINIMUM_EXAMPLE
+
+
 def test_parse_audio_folder(make_mp3, tmp_path, sample_mp3_bytes):
     make_mp3("tagged", title="Song", artist="Artist")
     (tmp_path / "raw.mp3").write_bytes(sample_mp3_bytes)

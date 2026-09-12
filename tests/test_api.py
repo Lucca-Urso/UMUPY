@@ -428,6 +428,10 @@ def test_rekordbox_analyze_no_playlists(api, monkeypatch):
 
     assert api.rekordbox_analyze("/x") == {"error": "No playlists found in the selected source."}
 
+    monkeypatch.setattr(rpc, "load_playlists_from_source", lambda _: (_ for _ in ()).throw(ValueError("Invalid XML file: boom")))
+
+    assert api.rekordbox_analyze("/x") == {"error": "Invalid XML file: boom"}
+
 
 def test_rekordbox_analyze_and_create(api, project_dir, monkeypatch):
     first_db = FakeDB([FakeContent("Alpha")], names=["Old"])

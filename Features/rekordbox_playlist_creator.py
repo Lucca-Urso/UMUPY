@@ -79,37 +79,97 @@ def parse_txt_playlist(txt_path):
     return tracks
 
 
+XML_MINIMUM_EXAMPLE = """<DJ_PLAYLISTS>
+  <COLLECTION>
+    <TRACK TrackID="1" Name="Song title" Artist="Artist name"/>
+    <TRACK TrackID="2" Location="file://localhost/Music/Other%20song.mp3"/>
+  </COLLECTION>
+  <PLAYLISTS>
+    <NODE Type="1" Name="My playlist">
+      <TRACK Key="1"/>
+      <TRACK Key="2"/>
+    </NODE>
+  </PLAYLISTS>
+</DJ_PLAYLISTS>"""
+
+
+def attribute(element, *names, default=""):
+    lowered = {key.lower(): value for key, value in element.attrib.items()}
+
+    for name in names:
+        value = lowered.get(name.lower())
+
+        if value is not None and value != "":
+            return value
+
+    return default
+
+
+def title_from_location(location):
+    from urllib.parse import unquote, urlparse
+
+    path = urlparse(location).path if "://" in location else location
+    return Path(unquote(path)).stem
+
+
+def track_from_element(element):
+    title = attribute(element, "Name", "Title")
+    location = attribute(element, "Location", "Path", "File")
+
+    if not title and location:
+        title = title_from_location(location)
+
+    if not title:
+        return None
+
+    return {"title": title, "artist": attribute(element, "Artist", "Artists")}
+
+
 def parse_xml_playlists(xml_path):
-    tree = parse_xml(xml_path)
-    root = tree.getroot()
+    from xml.etree.ElementTree import ParseError
+
+    try:
+        root = parse_xml(xml_path).getroot()
+    except ParseError as error:
+        raise ValueError(f"Invalid XML file: {error}") from error
 
     tracks_by_id = {}
-    collection = root.find("COLLECTION")
+    collection_nodes = [node for node in root.iter() if node.tag.upper() == "COLLECTION"]
 
-    if collection is not None:
-        for track in collection.findall("TRACK"):
-            track_id = track.get("TrackID")
-            if track_id:
-                tracks_by_id[track_id] = {
-                    "title": track.get("Name", ""),
-                    "artist": track.get("Artist", ""),
-                }
-
-    playlists = []
-    playlists_node = root.find("PLAYLISTS")
-
-    if playlists_node is not None:
-        for node in playlists_node.iter("NODE"):
-            if node.get("Type") != "1":
+    for collection in collection_nodes or [root]:
+        for element in collection.iter():
+            if element.tag.upper() != "TRACK" or element is root:
                 continue
 
-            tracks = []
-            for track in node.findall("TRACK"):
-                info = tracks_by_id.get(track.get("Key"))
-                if info and info["title"]:
-                    tracks.append(dict(info))
+            track = track_from_element(element)
+            track_id = attribute(element, "TrackID", "ID", "Key")
 
-            playlists.append({"name": node.get("Name", ""), "tracks": tracks})
+            if track and track_id and track_id not in tracks_by_id:
+                tracks_by_id[track_id] = track
+
+    playlists = []
+    playlist_nodes = [node for node in root.iter() if node.tag.upper() in ("NODE", "PLAYLIST")]
+
+    for node in playlist_nodes:
+        entries = [child for child in node if child.tag.upper() == "TRACK"]
+        node_type = attribute(node, "Type")
+
+        if node_type not in ("", "1") or (node_type == "" and not entries):
+            continue
+
+        tracks = []
+
+        for entry in entries:
+            key = attribute(entry, "Key", "TrackID", "ID")
+            info = tracks_by_id.get(key) or track_from_element(entry)
+
+            if info:
+                tracks.append(dict(info))
+
+        playlists.append({"name": attribute(node, "Name", "Title", default="Imported"), "tracks": tracks})
+
+    if not playlists and tracks_by_id:
+        playlists.append({"name": Path(xml_path).stem.replace("_", " "), "tracks": [dict(t) for t in tracks_by_id.values()]})
 
     return playlists
 
