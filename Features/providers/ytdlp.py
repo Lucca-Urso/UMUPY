@@ -6,7 +6,7 @@ import yt_downloader
 
 def run(arguments, url):
     result = subprocess.run(
-        [*yt_downloader.yt_dlp_command(), "--no-warnings", *yt_downloader.cookies_arguments(), *arguments, url],
+        [*yt_downloader.yt_dlp_command(), "--no-warnings", *yt_downloader.common_arguments(), *arguments, url],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
         cwd=yt_downloader.get_script_directory(),
     )

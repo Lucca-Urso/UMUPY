@@ -2,7 +2,19 @@
 import os
 from PyInstaller.utils.hooks import collect_data_files
 
+import glob
+import platform
+
 datas = [("UI/dist", "UI/dist"), ("Features", "Features")]
+binaries = []
+
+bundled_tools = glob.glob(os.path.join("bin", "ffmpeg*")) + glob.glob(os.path.join("bin", "ffprobe*")) + glob.glob(os.path.join("bin", "deno*"))
+
+if not bundled_tools and platform.system() == "Windows":
+    bundled_tools = [p for p in (os.path.join("Dependencies", "ffmpeg.exe"), os.path.join("Dependencies", "ffprobe.exe")) if os.path.isfile(p)]
+
+for tool in bundled_tools:
+    binaries.append((tool, "bin"))
 datas += collect_data_files("yt_dlp")
 datas += collect_data_files("yt_dlp_ejs")
 datas += collect_data_files("ytmusicapi")
@@ -11,7 +23,7 @@ datas += collect_data_files("pyrekordbox")
 a = Analysis(
     ["app.py"],
     pathex=["Features"],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=[
         "api",
@@ -26,6 +38,7 @@ a = Analysis(
         "matching",
         "download_engine",
         "rekordbox_sync",
+        "settings",
         "yt_downloader",
         "fix_artwork",
         "spotify_converter",
@@ -92,7 +105,7 @@ app = BUNDLE(
     info_plist={
         "CFBundleName": "UMUPY",
         "CFBundleDisplayName": "UMUPY",
-        "CFBundleShortVersionString": "0.1.0",
+        "CFBundleShortVersionString": "3.0.0",
         "NSHighResolutionCapable": True,
     },
 )

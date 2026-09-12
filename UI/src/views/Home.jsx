@@ -78,7 +78,13 @@ export default function Home({ onNavigate }) {
         ))}
       </main>
 
-      <footer className="mt-auto pb-6 text-center text-xs text-zinc-600">UMUPY 3.0</footer>
+      <footer className="mt-auto flex items-center justify-center gap-3 pb-6 text-xs text-zinc-600">
+        <span>UMUPY 3.0</span>
+        <span>·</span>
+        <button onClick={() => onNavigate('setup')} className="text-zinc-500 transition-colors hover:text-zinc-200">
+          Setup
+        </button>
+      </footer>
     </div>
   )
 }

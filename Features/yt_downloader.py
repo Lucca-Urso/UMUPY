@@ -46,19 +46,39 @@ def get_today():
     return date.today().strftime("%d_%m")
 
 
+def bundled_binary_directories():
+    directories = [get_dependencies_directory()]
+
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        directories.insert(0, os.path.join(sys._MEIPASS, "bin"))
+    else:
+        directories.append(os.path.join(os.path.dirname(get_script_directory()), "bin"))
+
+    return directories
+
+
 def find_ffmpeg():
     ffmpeg_binary = "ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg"
-    ffmpeg_path = shutil.which(ffmpeg_binary)
 
-    if ffmpeg_path:
-        return ffmpeg_path
+    for directory in bundled_binary_directories():
+        local_ffmpeg_path = os.path.join(directory, ffmpeg_binary)
 
-    local_ffmpeg_path = os.path.join(get_dependencies_directory(), ffmpeg_binary)
+        if os.path.isfile(local_ffmpeg_path):
+            return local_ffmpeg_path
 
-    if os.path.isfile(local_ffmpeg_path):
-        return local_ffmpeg_path
+    return shutil.which(ffmpeg_binary)
 
-    return None
+
+def find_deno():
+    deno_binary = "deno.exe" if platform.system() == "Windows" else "deno"
+
+    for directory in bundled_binary_directories():
+        local_path = os.path.join(directory, deno_binary)
+
+        if os.path.isfile(local_path):
+            return local_path
+
+    return shutil.which(deno_binary)
 
 
 def find_cookies():
@@ -82,9 +102,33 @@ def find_cookies():
     return None
 
 
+def cookies_browser():
+    import settings
+
+    return settings.load().get("cookies_browser")
+
+
 def cookies_arguments():
+    browser = cookies_browser()
+
+    if browser:
+        return ["--cookies-from-browser", browser]
+
     cookies_path = find_cookies()
     return ["--cookies", cookies_path] if cookies_path else []
+
+
+def deno_arguments():
+    deno_path = find_deno()
+
+    if deno_path and not shutil.which(os.path.basename(deno_path)):
+        return ["--js-runtimes", f"deno:{deno_path}"]
+
+    return []
+
+
+def common_arguments():
+    return [*cookies_arguments(), *deno_arguments()]
 
 
 def ask_yes_no(question):
@@ -157,7 +201,7 @@ def detect_playlist(url, script_directory):
             "--print", "%(playlist_title)s",
             "--playlist-items", "1",
             "--no-warnings",
-            *cookies_arguments(),
+            *common_arguments(),
             url,
         ],
         capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=script_directory,
@@ -200,7 +244,7 @@ def extract_videos_chunk(url, script_directory, start_index, end_index):
             "--playlist-end", str(end_index),
             "--dump-json",
             "--no-warnings",
-            *cookies_arguments(),
+            *common_arguments(),
             url,
         ],
         capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=script_directory,
@@ -262,7 +306,7 @@ def probe_url_error(url, script_directory):
             "--playlist-items", "1",
             "--simulate",
             "--print", "%(id)s",
-            *cookies_arguments(),
+            *common_arguments(),
             url,
         ],
         capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=script_directory,
@@ -376,7 +420,7 @@ def download_video(video, output_directory, output_template, script_directory, f
         *(sleep_arguments if sleep_arguments is not None else DEFAULT_SLEEP_ARGUMENTS),
         "--output",                  output_path,
         "--exec",                    post_download_command,
-        *cookies_arguments(),
+        *common_arguments(),
         video["url"],
     ]
 

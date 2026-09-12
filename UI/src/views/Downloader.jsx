@@ -10,7 +10,7 @@ import { usePolling } from '../hooks/usePolling'
 import { useSetToggle } from '../hooks/useSetToggle'
 import { useSpotifyReady } from '../hooks/useSpotifyReady'
 
-export default function Downloader({ onBack }) {
+export default function Downloader({ onBack, onSetup }) {
   const [step, setStep] = useState('setup')
   const [links, setLinks] = useState([''])
   const [scanEnabled, setScanEnabled] = useState(false)
@@ -68,7 +68,8 @@ export default function Downloader({ onBack }) {
 
           {needsSpotify && (
             <Notice>
-              Spotify links need a one-time setup. Open Setup from the home screen, then come back here.
+              Spotify links need a one-time setup.{' '}
+              <button onClick={onSetup} className="underline">Open Setup</button>
             </Notice>
           )}
 

@@ -54,7 +54,7 @@ function FolderPicker({ folder, onPick, hint }) {
   )
 }
 
-export default function Synchronizer({ onBack }) {
+export default function Synchronizer({ onBack, onSetup }) {
   const [step, setStep] = useState('destination')
   const [destination, setDestination] = useState(null)
   const [source, setSource] = useState(null)
@@ -210,7 +210,12 @@ export default function Synchronizer({ onBack }) {
       {step === 'setup' && (
         <div className="flex flex-col gap-5">
           {fromProviders && <LinkList links={links} onChange={setLinks} placeholder="https://open.spotify.com/playlist/..." />}
-          {needsSpotify && <Notice>Spotify links need a one-time setup. Open Setup from the home screen first.</Notice>}
+          {needsSpotify && (
+            <Notice>
+              Spotify links need a one-time setup.{' '}
+              <button onClick={onSetup} className="underline">Open Setup</button>
+            </Notice>
+          )}
 
           <FolderPicker
             folder={folder}
