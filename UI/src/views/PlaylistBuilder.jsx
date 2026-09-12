@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { call } from '../api'
 import { Button, Card, Checkbox, ErrorBox, Notice, PageHeader, Spinner, StatusIcon } from '../components/ui'
+import Tutorial, { TutorialButton, useTutorial } from '../components/Tutorial'
+import { useSetToggle } from '../hooks/useSetToggle'
 
 function XmlHelp({ onClose }) {
   const [info, setInfo] = useState(null)
@@ -44,8 +46,9 @@ export default function PlaylistBuilder({ onBack }) {
   const [step, setStep] = useState('setup')
   const [sourcePath, setSourcePath] = useState(null)
   const [analysis, setAnalysis] = useState(null)
-  const [checked, setChecked] = useState(new Set())
-  const [expanded, setExpanded] = useState(new Set())
+  const checked = useSetToggle()
+  const expanded = useSetToggle()
+  const tutorial = useTutorial()
   const [created, setCreated] = useState(0)
   const [error, setError] = useState(null)
   const [help, setHelp] = useState(false)
@@ -66,7 +69,7 @@ export default function PlaylistBuilder({ onBack }) {
       return
     }
     setAnalysis(result)
-    setChecked(new Set(result.playlists.filter((p) => !p.exists && p.matched.length).map((p) => p.name)))
+    checked.replace(result.playlists.filter((p) => !p.exists && p.matched.length).map((p) => p.name))
     setStep('preview')
   }
 
@@ -88,13 +91,6 @@ export default function PlaylistBuilder({ onBack }) {
     setStep('done')
   }
 
-  const toggleSet = (setter) => (name) =>
-    setter((prev) => {
-      const next = new Set(prev)
-      next.has(name) ? next.delete(name) : next.add(name)
-      return next
-    })
-
   const reset = () => {
     setStep('setup')
     setSourcePath(null)
@@ -109,7 +105,13 @@ export default function PlaylistBuilder({ onBack }) {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-8 pb-12">
-      <PageHeader title="Playlist Builder" subtitle="Create RekordBox playlists from a file or a folder" onBack={onBack} />
+      <PageHeader
+        title="Playlist Builder"
+        subtitle="Create RekordBox playlists from a file or a folder"
+        onBack={onBack}
+        action={<TutorialButton onClick={tutorial.toggle} open={tutorial.open} />}
+      />
+      <Tutorial id="builder" open={tutorial.open} onClose={tutorial.close} />
 
       {step === 'setup' && (
         <div className="flex flex-col gap-5">
@@ -168,10 +170,10 @@ export default function PlaylistBuilder({ onBack }) {
               return (
                 <div key={playlist.name} className={index > 0 ? 'border-t border-white/[0.05]' : ''}>
                   <div
-                    onClick={() => selectable && toggleSet(setChecked)(playlist.name)}
+                    onClick={() => selectable && checked.toggle(playlist.name)}
                     className={`flex items-center gap-4 px-5 py-3.5 transition-colors ${selectable ? 'cursor-pointer hover:bg-white/[0.04]' : 'opacity-50'}`}
                   >
-                    <Checkbox checked={checked.has(playlist.name)} onChange={() => selectable && toggleSet(setChecked)(playlist.name)} />
+                    <Checkbox checked={checked.has(playlist.name)} onChange={() => selectable && checked.toggle(playlist.name)} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm text-zinc-100">{playlist.name}</p>
                       <p className="text-xs text-zinc-600">
@@ -185,7 +187,7 @@ export default function PlaylistBuilder({ onBack }) {
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
-                        toggleSet(setExpanded)(playlist.name)
+                        expanded.toggle(playlist.name)
                       }}
                       className="text-zinc-500 transition-colors hover:text-zinc-200"
                       aria-label="Show tracks"

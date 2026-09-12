@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { call } from '../api'
-import { Button, Card, Spinner, StatusIcon } from '../components/ui'
+import { Card, PageHeader, Spinner, StatusIcon } from '../components/ui'
+import Tutorial, { TutorialButton, useTutorial } from '../components/Tutorial'
 
 const OPERATION_LABELS = {
   youtube_download: 'YouTube Download',
@@ -8,6 +9,7 @@ const OPERATION_LABELS = {
   spotify_convert: 'Spotify Conversion',
   playlist_analysis: 'Playlist Analysis',
   rekordbox_create: 'RekordBox Playlists',
+  rekordbox_sync: 'RekordBox Sync',
   sync_check: 'Sync Check',
   sync_delete: 'Sync Delete',
   sync_download: 'Sync Download',
@@ -41,6 +43,7 @@ export default function History({ onBack }) {
   const [runs, setRuns] = useState(null)
   const [selected, setSelected] = useState(null)
   const [detail, setDetail] = useState(null)
+  const tutorial = useTutorial()
 
   useEffect(() => {
     call('history_list').then(setRuns)
@@ -54,22 +57,13 @@ export default function History({ onBack }) {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-8 pb-12">
-      <header className="flex items-center gap-3 pt-8 pb-10">
-        <button
-          onClick={() => (selected ? (setSelected(null), setDetail(null)) : onBack())}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.06] text-zinc-400 transition-colors hover:bg-white/[0.12] hover:text-white"
-        >
-          <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M15 6l-6 6 6 6" />
-          </svg>
-        </button>
-        <div>
-          <h1 className="text-xl font-semibold text-white">History</h1>
-          <p className="text-[13px] text-zinc-500">
-            {selected ? OPERATION_LABELS[selected.operation] || selected.operation : 'Past operations and logs'}
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        title="History"
+        subtitle={selected ? OPERATION_LABELS[selected.operation] || selected.operation : 'Past operations and logs'}
+        onBack={() => (selected ? (setSelected(null), setDetail(null)) : onBack())}
+        action={<TutorialButton onClick={tutorial.toggle} open={tutorial.open} />}
+      />
+      <Tutorial id="history" open={tutorial.open} onClose={tutorial.close} />
 
       {!selected && !runs && (
         <div className="flex flex-1 items-center justify-center pb-24">

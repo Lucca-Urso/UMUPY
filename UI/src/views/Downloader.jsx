@@ -5,21 +5,21 @@ import LinkList, { detectProvider } from '../components/LinkList'
 import TrackList from '../components/TrackList'
 import ScanFolders from '../components/ScanFolders'
 import DownloadRunner from '../components/DownloadRunner'
+import Tutorial, { TutorialButton, useTutorial } from '../components/Tutorial'
 import { usePolling } from '../hooks/usePolling'
+import { useSetToggle } from '../hooks/useSetToggle'
+import { useSpotifyReady } from '../hooks/useSpotifyReady'
 
 export default function Downloader({ onBack }) {
   const [step, setStep] = useState('setup')
   const [links, setLinks] = useState([''])
   const [scanEnabled, setScanEnabled] = useState(false)
   const [selectedFolders, setSelectedFolders] = useState(new Set(['__all__']))
-  const [checked, setChecked] = useState(new Set())
+  const checked = useSetToggle()
   const [error, setError] = useState(null)
-  const [spotify, setSpotify] = useState(null)
+  const [spotify] = useSpotifyReady()
   const [status] = usePolling('get_analysis_status', step === 'analyzing')
-
-  useEffect(() => {
-    call('spotify_ready').then(setSpotify)
-  }, [])
+  const tutorial = useTutorial()
 
   const validLinks = links.map((l) => l.trim()).filter((l) => l && detectProvider(l))
   const needsSpotify = validLinks.some((l) => detectProvider(l) === 'spotify') && spotify && !spotify.ready
@@ -33,7 +33,7 @@ export default function Downloader({ onBack }) {
       setError('No downloadable tracks were found for these links.')
       setStep('setup')
     } else {
-      setChecked(new Set(status.matched.filter((v) => !v.duplicate).map((v) => v.id)))
+      checked.replace(status.matched.filter((v) => !v.duplicate).map((v) => v.id))
       setStep('select')
     }
   }, [status, step])
@@ -43,13 +43,6 @@ export default function Downloader({ onBack }) {
     setStep('analyzing')
     await call('start_analysis', validLinks, scanEnabled ? [...selectedFolders] : null)
   }
-
-  const toggle = (id) =>
-    setChecked((prev) => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
 
   const reset = () => {
     setStep('setup')
@@ -61,7 +54,13 @@ export default function Downloader({ onBack }) {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-8 pb-12">
-      <PageHeader title="Downloader" subtitle="MP3 with embedded artwork from YouTube, Spotify or SoundCloud" onBack={onBack} />
+      <PageHeader
+        title="Downloader"
+        subtitle="MP3 with embedded artwork from YouTube, Spotify or SoundCloud"
+        onBack={onBack}
+        action={<TutorialButton onClick={tutorial.toggle} open={tutorial.open} />}
+      />
+      <Tutorial id="downloader" open={tutorial.open} onClose={tutorial.close} />
 
       {step === 'setup' && (
         <div className="flex flex-col gap-5">
@@ -118,11 +117,11 @@ export default function Downloader({ onBack }) {
             subtitle={`${checked.size} of ${status.matched.length} tracks selected${
               status.unmatched.length ? ` · ${status.unmatched.length} not found` : ''
             }`}
-            onSelectAll={() => setChecked(new Set(status.matched.map((v) => v.id)))}
-            onClear={() => setChecked(new Set())}
+            onSelectAll={() => checked.replace(status.matched.map((v) => v.id))}
+            onClear={checked.clear}
           />
 
-          <TrackList tracks={status.matched} checked={checked} onToggle={toggle} />
+          <TrackList tracks={status.matched} checked={checked.selected} onToggle={checked.toggle} />
 
           {status.unmatched.length > 0 && (
             <Card className="max-h-[180px] overflow-y-auto">

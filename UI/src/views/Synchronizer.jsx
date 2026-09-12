@@ -6,7 +6,10 @@ import TrackList from '../components/TrackList'
 import ScanFolders from '../components/ScanFolders'
 import DownloadRunner from '../components/DownloadRunner'
 import RekordboxPlan from '../components/RekordboxPlan'
+import Tutorial, { TutorialButton, useTutorial } from '../components/Tutorial'
 import { usePolling } from '../hooks/usePolling'
+import { useSetToggle } from '../hooks/useSetToggle'
+import { useSpotifyReady } from '../hooks/useSpotifyReady'
 
 const DESTINATIONS = [
   { id: 'folder', title: 'Local folder', description: 'Download what is missing and spot files that left the playlist.' },
@@ -59,19 +62,16 @@ export default function Synchronizer({ onBack }) {
   const [folder, setFolder] = useState(null)
   const [scanEnabled, setScanEnabled] = useState(false)
   const [selectedFolders, setSelectedFolders] = useState(new Set(['__all__']))
-  const [spotify, setSpotify] = useState(null)
+  const [spotify] = useSpotifyReady()
   const [error, setError] = useState(null)
-  const [orphanChecked, setOrphanChecked] = useState(new Set())
-  const [missingChecked, setMissingChecked] = useState(new Set())
+  const orphans = useSetToggle()
+  const missing = useSetToggle()
   const [deleteArmed, setDeleteArmed] = useState(false)
   const [deleteResults, setDeleteResults] = useState(null)
   const [plan, setPlan] = useState(null)
   const [sync, setSync] = usePolling('get_sync_status', step === 'analyzing')
   const [chain] = usePolling('get_chain_status', step === 'planning')
-
-  useEffect(() => {
-    call('spotify_ready').then(setSpotify)
-  }, [])
+  const tutorial = useTutorial()
 
   const validLinks = links.map((l) => l.trim()).filter((l) => l && detectProvider(l))
   const needsSpotify = validLinks.some((l) => detectProvider(l) === 'spotify') && spotify && !spotify.ready
@@ -85,8 +85,8 @@ export default function Synchronizer({ onBack }) {
       setStep('setup')
       return
     }
-    setOrphanChecked(new Set())
-    setMissingChecked(new Set(sync.missing.filter((m) => m.video && !m.video.duplicate).map((m) => m.spotify_id || m.id)))
+    orphans.clear()
+    missing.replace(sync.missing.filter((m) => m.video && !m.video.duplicate).map((m) => m.spotify_id || m.id))
     setStep('results')
   }, [sync, step])
 
@@ -130,11 +130,11 @@ export default function Synchronizer({ onBack }) {
       return
     }
     setDeleteArmed(false)
-    const paths = sync.orphans.filter((o) => orphanChecked.has(o.path)).map((o) => o.path)
+    const paths = sync.orphans.filter((o) => orphans.has(o.path)).map((o) => o.path)
     const results = await call('sync_delete', paths)
     setDeleteResults(results)
     setSync((prev) => ({ ...prev, orphans: prev.orphans.filter((o) => !results.some((r) => r.ok && r.path === o.path)) }))
-    setOrphanChecked(new Set())
+    orphans.clear()
   }
 
   const continueToRekordbox = async () => {
@@ -157,7 +157,7 @@ export default function Synchronizer({ onBack }) {
   const missingKey = (m) => m.spotify_id || m.id
   const missingWithVideo = sync?.missing.filter((m) => m.video) ?? []
   const missingNotFound = sync?.missing.filter((m) => !m.video) ?? []
-  const selectedVideos = missingWithVideo.filter((m) => missingChecked.has(missingKey(m))).map((m) => m.video)
+  const selectedVideos = missingWithVideo.filter((m) => missing.has(missingKey(m))).map((m) => m.video)
 
   const subtitle = toRekordbox
     ? `To RekordBox${source ? ` · from ${source === 'providers' ? 'online playlists' : 'a local folder'}` : ''}`
@@ -167,7 +167,13 @@ export default function Synchronizer({ onBack }) {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-8 pb-12">
-      <PageHeader title="Synchronizer" subtitle={subtitle} onBack={step === 'destination' ? onBack : reset} />
+      <PageHeader
+        title="Synchronizer"
+        subtitle={subtitle}
+        onBack={step === 'destination' ? onBack : reset}
+        action={<TutorialButton onClick={tutorial.toggle} open={tutorial.open} />}
+      />
+      <Tutorial id="synchronizer" open={tutorial.open} onClose={tutorial.close} />
 
       {step === 'destination' && (
         <div className="flex flex-col gap-5">
@@ -280,23 +286,18 @@ export default function Synchronizer({ onBack }) {
             <Card className="overflow-hidden">
               <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-3">
                 <span className="text-[13px] font-medium text-zinc-200">Local files not in the playlist</span>
-                <span className="text-xs text-zinc-500">{orphanChecked.size} selected</span>
+                <span className="text-xs text-zinc-500">{orphans.size} selected</span>
               </div>
               <div className="max-h-[220px] overflow-y-auto">
                 {sync.orphans.map((orphan) => {
-                  const toggle = () =>
-                    setOrphanChecked((prev) => {
-                      const next = new Set(prev)
-                      next.has(orphan.path) ? next.delete(orphan.path) : next.add(orphan.path)
-                      return next
-                    })
+                  const toggle = () => orphans.toggle(orphan.path)
                   return (
                     <div
                       key={orphan.path}
                       onClick={toggle}
                       className="flex cursor-pointer items-center gap-4 border-t border-white/[0.05] px-5 py-3 transition-colors first:border-t-0 hover:bg-white/[0.04]"
                     >
-                      <Checkbox checked={orphanChecked.has(orphan.path)} onChange={toggle} />
+                      <Checkbox checked={orphans.has(orphan.path)} onChange={toggle} />
                       <span className="flex-1 truncate text-sm text-zinc-300">{orphan.filename}</span>
                     </div>
                   )
@@ -304,8 +305,8 @@ export default function Synchronizer({ onBack }) {
               </div>
               <div className="flex items-center justify-end gap-3 border-t border-white/[0.06] px-5 py-3">
                 {deleteArmed && <span className="text-xs text-[#ff6961]">This permanently deletes the files from {sync.folder}.</span>}
-                <Button variant="danger" onClick={deleteOrphans} disabled={!orphanChecked.size}>
-                  {deleteArmed ? `Confirm delete ${orphanChecked.size}` : `Delete ${orphanChecked.size || ''} selected`}
+                <Button variant="danger" onClick={deleteOrphans} disabled={!orphans.size}>
+                  {deleteArmed ? `Confirm delete ${orphans.size}` : `Delete ${orphans.size || ''} selected`}
                 </Button>
               </div>
             </Card>
@@ -322,19 +323,13 @@ export default function Synchronizer({ onBack }) {
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <span className="text-[13px] font-medium text-zinc-200">Missing locally</span>
-                <span className="text-xs text-zinc-500">{missingChecked.size} selected to download</span>
+                <span className="text-xs text-zinc-500">{missing.size} selected to download</span>
               </div>
               {missingWithVideo.length > 0 && (
                 <TrackList
                   tracks={missingWithVideo.map((m) => ({ ...m.video, id: missingKey(m), origin: { title: m.title, artists: m.artists } }))}
-                  checked={missingChecked}
-                  onToggle={(key) =>
-                    setMissingChecked((prev) => {
-                      const next = new Set(prev)
-                      next.has(key) ? next.delete(key) : next.add(key)
-                      return next
-                    })
-                  }
+                  checked={missing.selected}
+                  onToggle={missing.toggle}
                   maxHeight="260px"
                 />
               )}
