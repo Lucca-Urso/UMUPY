@@ -73,18 +73,20 @@ def test_compare_skips_id_match_already_consumed():
     assert orphans == []
 
 
-def test_reconcile_missing_by_youtube_id():
-    orphans = [local("a", youtube_id="yt1"), local("b", youtube_id="yt2")]
+def test_reconcile_missing_by_provider_id():
+    orphans = [local("a", youtube_id="yt1"), local("b", youtube_id="yt2"), {**local("c"), "soundcloud_id": "sc1"}]
     entries = [
         {"spotify_id": "s1", "video": {"id": "yt1"}},
         {"spotify_id": "s2", "video": {"id": "nope"}},
         {"spotify_id": "s3", "video": None},
+        {"spotify_id": "s4", "video": {"id": "sc1", "source": "soundcloud"}},
+        {"spotify_id": "s5", "video": {"id": "yt2", "source": "soundcloud"}},
     ]
 
     still_missing, reconciled = sync_playlists.reconcile_missing(entries, orphans)
 
-    assert [e["spotify_id"] for e in still_missing] == ["s2", "s3"]
-    assert [(e["spotify_id"], f["filename"]) for e, f in reconciled] == [("s1", "a")]
+    assert [e["spotify_id"] for e in still_missing] == ["s2", "s3", "s5"]
+    assert [(e["spotify_id"], f["filename"]) for e, f in reconciled] == [("s1", "a"), ("s4", "c")]
     assert [f["filename"] for f in orphans] == ["b"]
 
 

@@ -152,6 +152,15 @@ export default function Spotify({ onBack }) {
                 style={{ width: `${status?.total ? (status.processed / status.total) * 100 : 0}%` }}
               />
             </div>
+            {status?.current && (
+              <p className="mt-4 flex items-center gap-2.5 text-sm text-zinc-400">
+                <Spinner className="h-4 w-4" />
+                <span className="truncate">
+                  {status.current.retrying ? `Retrying on ${status.current.provider}: ` : ''}
+                  {status.current.track}
+                </span>
+              </p>
+            )}
           </Card>
 
           {status?.matched.length > 0 && (
@@ -162,7 +171,7 @@ export default function Spotify({ onBack }) {
                   className={`px-5 py-3 ${index > 0 ? 'border-t border-white/[0.05]' : ''}`}
                 >
                   <p className="truncate text-sm text-zinc-300">
-                    {video.source.artists.join(', ')} - {video.source.title}
+                    {video.origin.artists.join(', ')} - {video.origin.title}
                   </p>
                   <p className="truncate text-xs text-zinc-600">→ {video.title}</p>
                 </div>
@@ -205,7 +214,7 @@ export default function Spotify({ onBack }) {
                 <Checkbox checked={checked.has(video.id)} onChange={() => toggleVideo(video.id)} />
                 <div className="min-w-0 flex-1">
                   <p className={`truncate text-sm ${checked.has(video.id) ? 'text-zinc-100' : 'text-zinc-500'}`}>
-                    {video.source.artists.join(', ')} - {video.source.title}
+                    {video.origin.artists.join(', ')} - {video.origin.title}
                   </p>
                   <p className="truncate text-xs text-zinc-600">→ {video.title}</p>
                 </div>

@@ -17,6 +17,7 @@ if platform.system() == "Darwin":
 import yt_downloader
 import history
 import library
+import matching
 
 
 OPERATION_LABEL = {
@@ -52,6 +53,7 @@ class UmupyApi:
             "playlist": None,
             "matched": [],
             "unmatched": [],
+            "current": None,
             "error": None,
         }
 
@@ -66,6 +68,7 @@ class UmupyApi:
             "in_sync": 0,
             "orphans": [],
             "missing": [],
+            "current": None,
             "error": None,
         }
 
@@ -218,6 +221,35 @@ class UmupyApi:
 
         return True
 
+    def _match_with_fallback(self, track, clients, run_id, status):
+        label = matching.track_label(track)
+
+        def on_attempt(provider, retrying):
+            with self._lock:
+                status["current"] = {"track": label, "provider": provider, "retrying": retrying}
+
+        try:
+            match, attempts = matching.find_download_source(track, clients, on_attempt=on_attempt)
+        except Exception as error:
+            history.log_item(run_id, label, "failed", error=str(error))
+            raise
+
+        for attempt in attempts:
+            if attempt["status"] == "matched":
+                history.log_item(
+                    run_id, label, "ok",
+                    detail=f"-> {match['title']} ({match['url']}) {matching.describe_attempt(attempt)}",
+                )
+            elif attempt["status"] == "error":
+                history.log_item(run_id, label, "failed", detail=attempt["provider"], error=attempt["error"])
+            else:
+                history.log_item(run_id, label, "not_found", detail=matching.describe_attempt(attempt))
+
+        with self._lock:
+            status["current"] = None
+
+        return match
+
     def _spotify_worker(self, url, scan_folders):
         import spotify_converter
 
@@ -235,24 +267,21 @@ class UmupyApi:
                 self._spotify_status["total"] = len(playlist["tracks"])
                 self._spotify_status["phase"] = "matching"
 
-            ytmusic = spotify_converter.open_ytmusic()
+            clients = {"youtube": spotify_converter.open_ytmusic()}
             consecutive_failures = 0
 
             for track in playlist["tracks"]:
-                source = {"title": track["title"], "artists": track["artists"]}
-                label = f"{', '.join(track['artists'])} - {track['title']}"
+                origin = {"title": track["title"], "artists": track["artists"]}
 
                 try:
-                    video = spotify_converter.search_youtube_equivalent(ytmusic, track)
+                    video = self._match_with_fallback(track, clients, run_id, self._spotify_status)
                     consecutive_failures = 0
-                except Exception as search_error:
+                except Exception:
                     consecutive_failures += 1
 
                     with self._lock:
                         self._spotify_status["processed"] += 1
-                        self._spotify_status["unmatched"].append(source)
-
-                    history.log_item(run_id, label, "failed", error=str(search_error))
+                        self._spotify_status["unmatched"].append(origin)
 
                     if consecutive_failures >= spotify_converter.MAX_CONSECUTIVE_FAILURES:
                         raise Exception(
@@ -267,15 +296,10 @@ class UmupyApi:
 
                     if video:
                         video["duplicate"] = index.contains("spotify", track["spotify_id"])
-                        video["source"] = source
+                        video["origin"] = origin
                         self._spotify_status["matched"].append(video)
                     else:
-                        self._spotify_status["unmatched"].append(source)
-
-                if video:
-                    history.log_item(run_id, label, "ok", detail=f"-> {video['title']} ({video['url']})")
-                else:
-                    history.log_item(run_id, label, "not_found")
+                        self._spotify_status["unmatched"].append(origin)
 
             history.finish_run(run_id, "completed")
 
@@ -444,17 +468,15 @@ class UmupyApi:
             if healed:
                 history.log_item(run_id, f"{healed} file(s) tagged with SPOTIFY_ID", "ok")
 
-            ytmusic = spotify_converter.open_ytmusic()
+            clients = {"youtube": spotify_converter.open_ytmusic()}
             consecutive_failures = 0
             missing_entries = []
 
             for track in missing:
-                label = f"{', '.join(track['artists'])} - {track['title']}"
-
                 try:
-                    video = spotify_converter.search_youtube_equivalent(ytmusic, track)
+                    video = self._match_with_fallback(track, clients, run_id, self._sync_status)
                     consecutive_failures = 0
-                except Exception as search_error:
+                except Exception:
                     consecutive_failures += 1
                     video = None
 
@@ -486,7 +508,7 @@ class UmupyApi:
                     run_id,
                     f"{', '.join(entry['artists'])} - {entry['title']}",
                     "ok",
-                    detail=f"reconciled by YOUTUBE_ID with {file['filename']}",
+                    detail=f"reconciled by {(entry['video'].get('source') or 'youtube').upper()}_ID with {file['filename']}",
                 )
 
             for entry in still_missing:

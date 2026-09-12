@@ -6,6 +6,8 @@ import pytest
 
 import spotify_converter
 import yt_downloader
+from providers import soundcloud as soundcloud_provider
+from providers import youtube as youtube_provider
 
 
 class FakeSpotify:
@@ -212,7 +214,8 @@ def test_build_spotify_index(make_mp3, tmp_path, sample_mp3_bytes):
 
 def test_convert_tracks_mixed_results(monkeypatch, capsys):
     outcomes = {"a": {"id": "v", "title": "V", "url": "u", "score": 90}, "b": None}
-    monkeypatch.setattr(spotify_converter, "search_youtube_equivalent", lambda _, track: outcomes[track["spotify_id"]])
+    monkeypatch.setattr(youtube_provider, "search", lambda client, track: outcomes[track["spotify_id"]])
+    monkeypatch.setattr(soundcloud_provider, "search", lambda client, track: None)
     tracks = [{**TRACK, "spotify_id": "a"}, {**TRACK, "spotify_id": "b"}]
 
     matched, unmatched = spotify_converter.convert_tracks(None, tracks)
@@ -228,7 +231,8 @@ def test_convert_tracks_aborts_after_consecutive_failures(monkeypatch, capsys):
     def boom(*_):
         raise ConnectionError("down")
 
-    monkeypatch.setattr(spotify_converter, "search_youtube_equivalent", boom)
+    monkeypatch.setattr(youtube_provider, "search", boom)
+    monkeypatch.setattr(soundcloud_provider, "search", boom)
     monkeypatch.setattr(spotify_converter, "MAX_CONSECUTIVE_FAILURES", 2)
     tracks = [{**TRACK, "spotify_id": str(i)} for i in range(5)]
 

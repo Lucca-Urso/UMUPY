@@ -14,6 +14,8 @@ import spotify_converter
 import sync_playlists
 import yt_downloader
 from app import UmupyApi
+from providers import soundcloud as soundcloud_provider
+from providers import youtube as youtube_provider
 
 
 class SyncThread:
@@ -165,7 +167,8 @@ def prepare_spotify(monkeypatch, tracks, searcher):
     monkeypatch.setattr(spotify_converter, "open_spotify", lambda: "spotify")
     monkeypatch.setattr(spotify_converter, "fetch_playlist", lambda *_: {"name": "Mix", "tracks": tracks})
     monkeypatch.setattr(spotify_converter, "open_ytmusic", lambda: "yt")
-    monkeypatch.setattr(spotify_converter, "search_youtube_equivalent", searcher)
+    monkeypatch.setattr(youtube_provider, "search", searcher)
+    monkeypatch.setattr(soundcloud_provider, "search", lambda client, track: None)
 
 
 def test_spotify_worker_matches_and_marks_duplicates(api, project_dir, monkeypatch):
@@ -184,7 +187,8 @@ def test_spotify_worker_matches_and_marks_duplicates(api, project_dir, monkeypat
     assert status["playlist"] == "Mix"
     assert status["processed"] == 3
     assert [v["duplicate"] for v in status["matched"]] == [False, True]
-    assert status["matched"][0]["source"] == {"title": "Song", "artists": ["Artist"]}
+    assert status["matched"][0]["origin"] == {"title": "Song", "artists": ["Artist"]}
+    assert status["matched"][0]["source"] == "youtube"
     assert len(status["unmatched"]) == 1
     assert history.list_runs()[0]["status"] == "completed"
 
@@ -194,6 +198,7 @@ def test_spotify_worker_search_errors_and_abort(api, project_dir, monkeypatch):
         raise ConnectionError("down")
 
     prepare_spotify(monkeypatch, [spotify_track(str(i)) for i in range(3)], searcher)
+    monkeypatch.setattr(soundcloud_provider, "search", searcher)
     monkeypatch.setattr(spotify_converter, "MAX_CONSECUTIVE_FAILURES", 2)
 
     api.start_spotify_analysis("url")
@@ -223,6 +228,58 @@ def test_spotify_worker_single_search_error_continues(api, project_dir, monkeypa
     assert status["error"] is None
     assert len(status["matched"]) == 1
     assert len(status["unmatched"]) == 1
+
+
+def test_spotify_worker_falls_back_to_soundcloud_and_logs_each_attempt(api, project_dir, monkeypatch):
+    prepare_spotify(monkeypatch, [spotify_track("s1")], lambda _, t: None)
+    monkeypatch.setattr(soundcloud_provider, "search", lambda _, t: {"id": "sc1", "title": "SC", "url": "u", "source": "soundcloud", "score": 80})
+    seen = []
+    original = api._match_with_fallback
+
+    def spy(track, clients, run_id, status):
+        result = original(track, clients, run_id, status)
+        seen.append(status["current"])
+        return result
+
+    monkeypatch.setattr(api, "_match_with_fallback", spy)
+
+    api.start_spotify_analysis("url")
+    status = api.get_spotify_status()
+
+    assert status["matched"][0]["source"] == "soundcloud"
+    assert status["matched"][0]["spotify_id"] == "s1"
+    assert seen == [None]
+    detail = history.get_run(history.list_runs()[0]["id"])
+    assert [(i["status"], i["detail"]) for i in detail["items"]] == [
+        ("not_found", "not found on youtube"),
+        ("ok", "-> SC (u) matched on soundcloud (score 80)"),
+    ]
+
+
+def test_match_with_fallback_reports_retry_state(api, project_dir, monkeypatch):
+    states = []
+
+    def fake_find(track, clients, on_attempt=None, order=None):
+        on_attempt("youtube", False)
+        states.append(dict(api._spotify_status["current"]))
+        on_attempt("soundcloud", True)
+        states.append(dict(api._spotify_status["current"]))
+        return None, [{"provider": "youtube", "status": "error", "error": "x", "score": None}]
+
+    monkeypatch.setattr(app.matching, "find_download_source", fake_find)
+    run_id = history.start_run("spotify_convert")
+
+    result = api._match_with_fallback(spotify_track("s1"), {}, run_id, api._spotify_status)
+
+    assert result is None
+    assert states == [
+        {"track": "Artist - Song", "provider": "youtube", "retrying": False},
+        {"track": "Artist - Song", "provider": "soundcloud", "retrying": True},
+    ]
+    item = history.get_run(run_id)["items"][0]
+    assert item["status"] == "failed"
+    assert item["detail"] == "youtube"
+    assert item["error"] == "x"
 
 
 def test_spotify_worker_credentials_missing(api, project_dir, monkeypatch):
@@ -396,7 +453,8 @@ def prepare_sync(monkeypatch, tracks, local_files, searcher):
     monkeypatch.setattr(spotify_converter, "open_spotify", lambda: "spotify")
     monkeypatch.setattr(spotify_converter, "fetch_playlist", lambda *_: {"name": "Mix", "tracks": tracks})
     monkeypatch.setattr(spotify_converter, "open_ytmusic", lambda: "yt")
-    monkeypatch.setattr(spotify_converter, "search_youtube_equivalent", searcher)
+    monkeypatch.setattr(youtube_provider, "search", searcher)
+    monkeypatch.setattr(soundcloud_provider, "search", lambda client, track: None)
     monkeypatch.setattr(sync_playlists, "build_local_index", lambda _: local_files)
     monkeypatch.setattr(sync_playlists, "heal_spotify_ids", lambda pairs: 1)
     monkeypatch.setattr(sync_playlists, "embed_spotify_id", lambda *_: (_ for _ in ()).throw(OSError("ro")))
@@ -422,7 +480,8 @@ def test_sync_worker_full_flow(api, project_dir, monkeypatch):
     assert [o["filename"] for o in status["orphans"]] == ["orphan"]
     detail = history.get_run(history.list_runs()[0]["id"])
     statuses = [item["status"] for item in detail["items"]]
-    assert statuses == ["ok", "ok", "missing", "not_found", "orphan"]
+    assert statuses == ["ok", "ok", "ok", "not_found", "not_found", "ok", "missing", "not_found", "orphan"]
+    assert "reconciled by YOUTUBE_ID" in detail["items"][5]["detail"]
 
 
 def test_sync_worker_search_failure_abort(api, project_dir, monkeypatch):
@@ -430,6 +489,7 @@ def test_sync_worker_search_failure_abort(api, project_dir, monkeypatch):
         raise ConnectionError("down")
 
     prepare_sync(monkeypatch, [spotify_track("s1", "Aaa"), spotify_track("s2", "Bbb")], [], searcher)
+    monkeypatch.setattr(soundcloud_provider, "search", searcher)
     monkeypatch.setattr(spotify_converter, "MAX_CONSECUTIVE_FAILURES", 2)
 
     api.start_sync_analysis("url", "/music")

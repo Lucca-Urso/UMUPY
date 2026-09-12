@@ -54,16 +54,15 @@ def compare_playlist_with_folder(tracks, local_files):
 
 
 def reconcile_missing(missing_entries, orphans):
-    by_youtube_id = {f["youtube_id"]: f for f in orphans if f["youtube_id"]}
-
     still_missing = []
     reconciled = []
 
     for entry in missing_entries:
         video = entry.get("video")
-        file = by_youtube_id.get(video["id"]) if video else None
+        source = (video or {}).get("source") or "youtube"
+        file = next((f for f in orphans if video and f.get(f"{source}_id") == video["id"]), None)
 
-        if file and file in orphans:
+        if file:
             reconciled.append((entry, file))
             orphans.remove(file)
         else:

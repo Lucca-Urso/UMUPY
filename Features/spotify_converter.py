@@ -134,17 +134,24 @@ def build_spotify_index(selected_folders):
 
 
 def convert_tracks(ytmusic, tracks):
+    import matching
+
     matched = []
     unmatched = []
     consecutive_failures = 0
+    clients = {"youtube": ytmusic}
 
-    print(f"\n[Convert] Searching YouTube equivalents for {len(tracks)} tracks...\n")
+    print(f"\n[Convert] Searching download sources for {len(tracks)} tracks...\n")
 
     for track in tracks:
-        label = f"{', '.join(track['artists'])} - {track['title']}"
+        label = matching.track_label(track)
+
+        def on_attempt(provider, retrying):
+            if retrying:
+                print(f"  [RETRY] {label} -> trying {provider}")
 
         try:
-            video = search_youtube_equivalent(ytmusic, track)
+            video, attempts = matching.find_download_source(track, clients, on_attempt=on_attempt)
             consecutive_failures = 0
         except Exception as error:
             consecutive_failures += 1
@@ -158,10 +165,14 @@ def convert_tracks(ytmusic, tracks):
 
             continue
 
+        for attempt in attempts:
+            if attempt["status"] != "matched":
+                print(f"          {matching.describe_attempt(attempt)}")
+
         if video:
             matched.append(video)
             print(f"  [OK {video['score']}] {label}")
-            print(f"          -> {video['title']} ({video['url']})")
+            print(f"          -> {video['title']} ({video['url']}) via {video['source']}")
         else:
             unmatched.append(track)
             print(f"  [NOT FOUND] {label}")

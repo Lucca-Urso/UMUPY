@@ -169,6 +169,15 @@ export default function Sync({ onBack }) {
                 }}
               />
             </div>
+            {status?.current && (
+              <p className="mt-4 flex items-center gap-2.5 text-sm text-zinc-400">
+                <Spinner className="h-4 w-4" />
+                <span className="truncate">
+                  {status.current.retrying ? `Retrying on ${status.current.provider}: ` : ''}
+                  {status.current.track}
+                </span>
+              </p>
+            )}
           </Card>
         </div>
       )}
