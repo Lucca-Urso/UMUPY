@@ -9,6 +9,8 @@ import pytest
 
 import app
 import download_engine
+import matching
+from api import base, sources
 import history
 import library
 import spotify_converter
@@ -49,13 +51,13 @@ SC_URL = "https://soundcloud.com/artist/sets/mix"
 
 def test_scan_paths_and_index(api, project_dir, monkeypatch):
     downloads = str(project_dir / "Downloads")
-    assert api._scan_paths(None) == [downloads]
-    assert api._scan_paths(["__all__", "x"]) == [downloads]
-    assert api._scan_paths(["A"]) == [os.path.join(downloads, "A")]
+    assert base.scan_paths(None) == [downloads]
+    assert base.scan_paths(["__all__", "x"]) == [downloads]
+    assert base.scan_paths(["A"]) == [os.path.join(downloads, "A")]
 
-    assert len(api._build_scan_index(None)) == 0
+    assert len(base.build_scan_index(None)) == 0
     monkeypatch.setattr(library, "build_index", lambda paths: {"paths": paths})
-    assert api._build_scan_index(["A"]) == {"paths": [os.path.join(downloads, "A")]}
+    assert base.build_scan_index(["A"]) == {"paths": [os.path.join(downloads, "A")]}
 
 
 def test_list_download_folders(api, project_dir):
@@ -144,7 +146,7 @@ def test_download_worker_logs_pause_and_fallback(api, project_dir, monkeypatch):
     monkeypatch.setattr(yt_downloader, "download_video", fake_download)
     monkeypatch.setattr(download_engine.DownloadEngine, "pause", lambda self, reason: self.emit("paused", {"reason": reason, "seconds": 30}) or 30)
     monkeypatch.setattr(
-        app.matching, "find_download_source",
+        matching, "find_download_source",
         lambda t, clients, order=None: ({"id": "sc1", "title": "SC", "url": "https://sc/1", "source": "soundcloud", "score": 80}, []),
     )
 
@@ -193,7 +195,7 @@ def test_open_output_directory_windows(api, monkeypatch):
     opened = []
     monkeypatch.setattr(platform, "system", lambda: "Windows")
     monkeypatch.setattr(os, "startfile", lambda path: opened.append(path), raising=False)
-    api._status["output_directory"] = "/out"
+    api._download["output_directory"] = "/out"
 
     assert api.open_output_directory() == "/out"
     assert opened == ["/out"]
@@ -283,14 +285,14 @@ def test_spotify_worker_falls_back_to_soundcloud_and_logs_each_attempt(api, proj
     prepare_spotify(monkeypatch, [spotify_track("s1")], lambda _, t: None)
     monkeypatch.setattr(soundcloud_provider, "search", lambda _, t: {"id": "sc1", "title": "SC", "url": "u", "source": "soundcloud", "score": 80})
     seen = []
-    original = api._match_with_fallback
+    original = sources.match_with_fallback
 
     def spy(track, clients, run_id, status):
         result = original(track, clients, run_id, status)
         seen.append(status["current"])
         return result
 
-    monkeypatch.setattr(api, "_match_with_fallback", spy)
+    monkeypatch.setattr(sources, "match_with_fallback", spy)
 
     api.start_spotify_analysis(SPOTIFY_URL)
     status = api.get_spotify_status()
@@ -310,15 +312,15 @@ def test_match_with_fallback_reports_retry_state(api, project_dir, monkeypatch):
 
     def fake_find(track, clients, on_attempt=None, order=None):
         on_attempt("youtube", False)
-        states.append(dict(api._spotify_status["current"]))
+        states.append(dict(api._analysis["current"]))
         on_attempt("soundcloud", True)
-        states.append(dict(api._spotify_status["current"]))
+        states.append(dict(api._analysis["current"]))
         return None, [{"provider": "youtube", "status": "error", "error": "x", "score": None}]
 
-    monkeypatch.setattr(app.matching, "find_download_source", fake_find)
+    monkeypatch.setattr(matching, "find_download_source", fake_find)
     run_id = history.start_run("spotify_convert")
 
-    result = api._match_with_fallback(spotify_track("s1"), {}, run_id, api._spotify_status)
+    result = sources.match_with_fallback(spotify_track("s1"), {}, run_id, api._analysis)
 
     assert result is None
     assert states == [
@@ -431,6 +433,27 @@ def test_rekordbox_analyze_no_playlists(api, monkeypatch):
     monkeypatch.setattr(rpc, "load_playlists_from_source", lambda _: (_ for _ in ()).throw(ValueError("Invalid XML file: boom")))
 
     assert api.rekordbox_analyze("/x") == {"error": "Invalid XML file: boom"}
+
+
+def test_rekordbox_analyze_database_open_failure(api, monkeypatch):
+    import rekordbox_playlist_creator as rpc
+
+    monkeypatch.setattr(rpc, "load_playlists_from_source", lambda _: [{"name": "X", "tracks": [{"title": "a", "artist": ""}]}])
+    monkeypatch.setattr(rpc, "open_database", lambda: (_ for _ in ()).throw(FileNotFoundError("no db")))
+
+    assert "Could not open the RekordBox database" in api.rekordbox_analyze("/source")["error"]
+
+
+def test_run_engine_notifies_finished_items(api, project_dir, monkeypatch):
+    monkeypatch.setattr(yt_downloader, "find_ffmpeg", lambda: "/bin/ffmpeg")
+    monkeypatch.setattr(yt_downloader, "download_video", lambda *a, **k: (0, None))
+    finished = []
+    run_id = history.start_run("youtube_download")
+
+    results = api._run_engine([VIDEO], str(project_dir), run_id, on_finished=lambda payload: finished.append(payload["id"]))
+
+    assert [r["ok"] for r in results] == [True]
+    assert finished == ["v1"]
 
 
 def test_rekordbox_analyze_and_create(api, project_dir, monkeypatch):
@@ -759,7 +782,7 @@ def test_sync_delete(api, project_dir, tmp_path):
     existing.write_bytes(b"")
     outside = tmp_path / "outside.mp3"
     outside.write_bytes(b"")
-    api._sync_status["folder"] = str(folder)
+    api._sync["folder"] = str(folder)
 
     results = api.sync_delete([str(existing), str(folder / "missing.mp3"), str(outside)])
 

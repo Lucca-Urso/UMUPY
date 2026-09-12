@@ -1,6 +1,6 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --cov=Features --cov=app --cov=project --cov-report=term-missing --cov-fail-under=95"
+addopts = "-q --cov=Features --cov=api --cov=app --cov=project --cov-report=term-missing --cov-fail-under=95"
 
 [tool.coverage.run]
 branch = false
