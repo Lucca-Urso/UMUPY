@@ -28,13 +28,13 @@ class SynchronizerApi:
     def select_folder(self):
         return base.pick_path("folder")
 
-    def start_sync_analysis(self, urls, folder):
+    def start_sync_analysis(self, urls, folder=None, folder_factory=None):
         urls = [urls] if isinstance(urls, str) else list(urls)
         self._sync.reset(running=True, phase="fetching", folder=folder)
-        base.start_thread(self._sync_worker, urls, folder)
+        base.start_thread(self._sync_worker, urls, folder, folder_factory)
         return True
 
-    def _sync_worker(self, urls, folder):
+    def _sync_worker(self, urls, folder, folder_factory=None):
         status = self._sync
 
         def work(context):
@@ -44,9 +44,19 @@ class SynchronizerApi:
             if not tracks:
                 raise Exception(sources.first_source_error(found))
 
-            status.update(playlist=name, phase="comparing")
+            target_folder = folder
 
-            local_files = sync_playlists.build_local_index(folder)
+            if not target_folder and folder_factory:
+                target_folder = folder_factory(name)
+                os.makedirs(target_folder, exist_ok=True)
+
+            if not target_folder:
+                raise Exception("Choose a folder to sync into.")
+
+            status.update(playlist=name, phase="comparing", folder=target_folder)
+            folder_path = target_folder
+
+            local_files = sync_playlists.build_local_index(folder_path)
             matched, missing, orphans = sync_playlists.compare_playlist_with_folder(tracks, local_files)
             healed = sync_playlists.heal_ids(matched)
 

@@ -141,6 +141,13 @@ def sc_entry(track_id, title, artist="Forss", duration=142.2, url=None):
     return {"id": track_id, "title": title, "uploader": artist, "duration": duration, "webpage_url": url or f"https://soundcloud.com/forss/{track_id}"}
 
 
+def test_soundcloud_entry_without_formats_is_unavailable():
+    track = soundcloud.entry_to_track({"id": 9, "title": "DRM Song", "uploader": "X", "formats": []})
+
+    assert track["unavailable"] == "Not downloadable from SoundCloud (protected track)"
+    assert soundcloud.entry_to_track({"id": 9, "title": "Ok", "formats": [{"format_id": "a"}]}).get("unavailable") is None
+
+
 def test_soundcloud_entry_to_track():
     track = soundcloud.entry_to_track({"id": 1, "title": "T", "artist": "Art", "uploader": "Up", "duration": 10.6, "url": "u"})
 

@@ -21,29 +21,6 @@ from providers import soundcloud as soundcloud_provider
 from providers import youtube as youtube_provider
 
 
-class SyncThread:
-    def __init__(self, target, args=(), daemon=None):
-        self.target = target
-        self.args = args
-
-    def start(self):
-        self.target(*self.args)
-
-
-@pytest.fixture
-def api(project_dir, monkeypatch):
-    monkeypatch.setattr(threading, "Thread", SyncThread)
-
-    def sequential_run(self, tracks):
-        for item in tracks:
-            self.process(item)
-
-        return list(self.results)
-
-    monkeypatch.setattr(download_engine.DownloadEngine, "run", sequential_run)
-    return UmupyApi()
-
-
 VIDEO = {"id": "v1", "title": "Song", "url": "https://youtube/v1"}
 SPOTIFY_URL = "https://open.spotify.com/playlist/abc"
 SC_URL = "https://soundcloud.com/artist/sets/mix"

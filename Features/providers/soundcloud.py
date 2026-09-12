@@ -22,6 +22,10 @@ def is_playlist(url):
 def entry_to_track(entry):
     artists = [entry.get("artist") or entry.get("uploader") or ""]
     duration = entry.get("duration")
+    extra = {}
+
+    if "formats" in entry and not entry.get("formats"):
+        extra["unavailable"] = "Not downloadable from SoundCloud (protected track)"
 
     return base.make_track(
         NAME,
@@ -30,6 +34,7 @@ def entry_to_track(entry):
         artists=artists,
         duration=round(duration) if duration else None,
         url=entry.get("webpage_url") or entry.get("url"),
+        **extra,
     )
 
 
@@ -41,7 +46,9 @@ def list_playlist_urls(url):
 
 
 def fetch_metadata(url, start, end):
-    entries, stderr, _ = ytdlp.dump_json(["--simulate", "--playlist-items", f"{start}-{end}"], url)
+    entries, stderr, _ = ytdlp.dump_json(
+        ["--simulate", "--ignore-no-formats-error", "--playlist-items", f"{start}-{end}"], url
+    )
     return entries, stderr
 
 

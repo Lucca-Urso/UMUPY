@@ -84,6 +84,54 @@ def project_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
+class SyncThread:
+    def __init__(self, target, args=(), daemon=None):
+        self.target = target
+        self.args = args
+
+    def start(self):
+        self.target(*self.args)
+
+
+@pytest.fixture
+def api(project_dir, monkeypatch):
+    import threading
+
+    import download_engine
+    from api import UmupyApi
+
+    monkeypatch.setattr(threading, "Thread", SyncThread)
+
+    def sequential_run(self, tracks):
+        for item in tracks:
+            self.process(item)
+
+        return list(self.results)
+
+    monkeypatch.setattr(download_engine.DownloadEngine, "run", sequential_run)
+    return UmupyApi()
+
+
+@pytest.fixture
+def spotify_env(monkeypatch):
+    import spotify_converter
+    import sync_playlists
+    from providers import soundcloud, youtube
+
+    def configure(tracks, local_files=None, searcher=None, name="Mix"):
+        monkeypatch.setattr(spotify_converter, "open_spotify", lambda: "spotify")
+        monkeypatch.setattr(spotify_converter, "fetch_playlist", lambda *_: {"name": name, "tracks": tracks})
+        monkeypatch.setattr(spotify_converter, "open_ytmusic", lambda: "yt")
+        monkeypatch.setattr(youtube, "search", searcher or (lambda client, track: None))
+        monkeypatch.setattr(soundcloud, "search", lambda client, track: None)
+
+        if local_files is not None:
+            monkeypatch.setattr(sync_playlists, "build_local_index", lambda _: local_files)
+            monkeypatch.setattr(sync_playlists, "heal_ids", lambda pairs: 0)
+
+    return configure
+
+
 class FakeCompleted:
     def __init__(self, returncode=0, stdout="", stderr=""):
         self.returncode = returncode
