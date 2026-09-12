@@ -5,22 +5,13 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import yt_downloader
+from providers import base
+from providers import youtube as youtube_provider
 
-MATCH_THRESHOLD = 75
+MATCH_THRESHOLD = base.MATCH_THRESHOLD
 MAX_CONSECUTIVE_FAILURES = 5
 
-
-def retry_call(operation, attempts=4, delay=2):
-    import time
-
-    for attempt in range(attempts):
-        try:
-            return operation()
-        except Exception:
-            if attempt == attempts - 1:
-                raise
-
-            time.sleep(delay * (attempt + 1))
+retry_call = base.retry_call
 
 
 def get_credentials_path():
@@ -94,9 +85,7 @@ def open_spotify():
 
 
 def open_ytmusic():
-    from ytmusicapi import YTMusic
-
-    return YTMusic()
+    return youtube_provider.open_client()
 
 
 def fetch_playlist(spotify, playlist_url):
@@ -124,42 +113,17 @@ def fetch_playlist(spotify, playlist_url):
 
 
 def search_youtube_equivalent(ytmusic, track):
-    from thefuzz import fuzz
+    video = youtube_provider.search(ytmusic, track)
 
-    artist_names = " ".join(track["artists"])
-    query = f"{artist_names} {track['title']}".strip()
-    results = retry_call(lambda: ytmusic.search(query, filter="songs", limit=10)) or []
-
-    best = None
-    best_score = 0.0
-
-    for result in results:
-        if not result.get("videoId"):
-            continue
-
-        title_score = fuzz.token_set_ratio(track["title"], result.get("title", ""))
-        result_artists = " ".join(artist["name"] for artist in result.get("artists", []))
-        artist_score = fuzz.token_set_ratio(artist_names, result_artists)
-        score = title_score * 0.6 + artist_score * 0.4
-
-        duration = result.get("duration_seconds")
-
-        if duration and abs(duration - track["duration"]) <= 5:
-            score += 10
-
-        if score > best_score:
-            best_score = score
-            best = result
-
-    if best is None or best_score < MATCH_THRESHOLD:
+    if video is None:
         return None
 
     return {
-        "id": best["videoId"],
-        "title": best.get("title", track["title"]),
-        "url": f"https://www.youtube.com/watch?v={best['videoId']}",
+        "id": video["id"],
+        "title": video["title"],
+        "url": video["url"],
         "spotify_id": track["spotify_id"],
-        "score": round(best_score),
+        "score": video["score"],
     }
 
 

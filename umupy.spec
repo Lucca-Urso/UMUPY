@@ -4,6 +4,7 @@ from PyInstaller.utils.hooks import collect_data_files
 
 datas = [("UI/dist", "UI/dist"), ("Features", "Features")]
 datas += collect_data_files("yt_dlp")
+datas += collect_data_files("yt_dlp_ejs")
 datas += collect_data_files("ytmusicapi")
 datas += collect_data_files("pyrekordbox")
 
@@ -19,7 +20,14 @@ a = Analysis(
         "rekordbox_playlist_creator",
         "sync_playlists",
         "history",
+        "providers",
+        "providers.base",
+        "providers.ytdlp",
+        "providers.youtube",
+        "providers.spotify",
+        "providers.soundcloud",
         "yt_dlp",
+        "yt_dlp_ejs",
         "mutagen",
         "PIL",
         "spotipy",
