@@ -16,12 +16,20 @@ SLEEP_ARGUMENTS = {
 RATE_LIMITS = {"youtube": (500, 3600), "soundcloud": (300, 600)}
 BACKOFF_STEPS = (30, 60, 120, 300, 900)
 BLOCK_PATTERNS = ("429", "too many requests", "sign in to confirm", "not a bot", "rate limit", "rate-limit")
+TRANSIENT_PATTERNS = ("403", "forbidden", "timed out", "connection reset", "temporarily")
 MAX_BLOCK_RETRIES = 2
+MAX_TRANSIENT_RETRIES = 1
+TRANSIENT_RETRY_DELAY = 8
 
 
 def is_block_error(error_text):
     text = (error_text or "").lower()
     return any(pattern in text for pattern in BLOCK_PATTERNS)
+
+
+def is_transient_error(error_text):
+    text = (error_text or "").lower()
+    return not is_block_error(text) and any(pattern in text for pattern in TRANSIENT_PATTERNS)
 
 
 class RateLimiter:
@@ -132,6 +140,7 @@ class DownloadEngine:
 
     def attempt(self, track, candidate, provider, retrying):
         blocks = 0
+        transient = 0
 
         while True:
             self.wait_if_paused()
@@ -146,6 +155,12 @@ class DownloadEngine:
                 blocks += 1
                 self.pause(error_text)
                 self.emit("attempt", {"track": track, "provider": provider, "status": "blocked", "error": error_text})
+                continue
+
+            if is_transient_error(error_text) and transient < MAX_TRANSIENT_RETRIES:
+                transient += 1
+                self.emit("attempt", {"track": track, "provider": provider, "status": "retrying", "error": error_text})
+                self.sleeper(TRANSIENT_RETRY_DELAY + self.jitter(0, 4))
                 continue
 
             return False, error_text
@@ -171,6 +186,8 @@ class DownloadEngine:
 
         try:
             while True:
+                last_candidate = candidate
+
                 if candidate.get("unavailable"):
                     ok, error_text = False, candidate["unavailable"]
                 else:
@@ -190,7 +207,7 @@ class DownloadEngine:
                         self.emit("attempt", {"track": track, "provider": item["provider"], "status": item["status"], "error": item.get("error")})
 
                 if not candidate:
-                    self.finish(track, False, None, provider, error_text)
+                    self.finish(track, False, last_candidate, provider, error_text)
                     return
 
                 provider = candidate["source"]

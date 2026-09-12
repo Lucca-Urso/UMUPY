@@ -100,7 +100,10 @@ def api(project_dir, monkeypatch):
     import download_engine
     from api import UmupyApi
 
+    import yt_downloader
+
     monkeypatch.setattr(threading, "Thread", SyncThread)
+    monkeypatch.setattr(yt_downloader, "find_ffmpeg", lambda: "/bin/ffmpeg")
 
     def sequential_run(self, tracks):
         for item in tracks:

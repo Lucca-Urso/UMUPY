@@ -75,6 +75,9 @@ class DownloaderApi:
         status = self._analysis
 
         def work(context):
+            if not yt_downloader.find_ffmpeg():
+                raise Exception("FFmpeg not found. Install it or place it in the Dependencies folder.")
+
             index = base.build_scan_index(scan_folders)
             found, tracks = sources.resolve_sources(urls, status)
             name = sources.describe_sources(found)
@@ -123,7 +126,9 @@ class DownloaderApi:
         if output_directory:
             os.makedirs(output_directory, exist_ok=True)
         elif playlist_name:
-            output_directory = os.path.join(downloads_directory, f"{playlist_name}_{yt_downloader.get_today()}")
+            from api.chain import safe_folder_name
+
+            output_directory = os.path.join(downloads_directory, f"{safe_folder_name(playlist_name)}_{yt_downloader.get_today()}")
             os.makedirs(output_directory, exist_ok=True)
         else:
             output_directory = downloads_directory

@@ -88,7 +88,7 @@ def test_engine_downloads_all_tracks_in_parallel_pools(engine_factory):
 
 def test_engine_falls_back_to_another_provider(engine_factory, monkeypatch):
     engine, events, calls, _ = engine_factory({
-        ("a", "youtube"): (1, "ERROR: HTTP Error 403: Forbidden"),
+        ("a", "youtube"): (1, "ERROR: Video unavailable"),
         ("sc1", "soundcloud"): (0, None),
     })
     monkeypatch.setattr(
@@ -231,3 +231,33 @@ def test_engine_defaults(tmp_path):
 
     assert engine.workers is download_engine.WORKERS
     engine.emit("noop", {})
+
+
+def test_transient_error_is_retried_on_same_provider(engine_factory):
+    engine, events, calls, clock = engine_factory({
+        ("a", "youtube"): [(1, "ERROR: unable to download video data: HTTP Error 403: Forbidden"), (0, None)],
+    })
+
+    results = engine.run([track("a")])
+
+    assert results[0]["ok"] is True
+    assert [c["source"] for c in calls] == ["youtube", "youtube"]
+    assert [(p["status"], p["provider"]) for k, p in events if k == "attempt"] == [("retrying", "youtube")]
+    assert not [1 for k, _ in events if k == "paused"]
+
+
+def test_transient_error_gives_up_after_one_retry(engine_factory, monkeypatch):
+    engine, events, calls, _ = engine_factory({("a", "youtube"): [(1, "403 Forbidden"), (1, "403 Forbidden")]})
+    monkeypatch.setattr(matching, "find_download_source", lambda *a, **k: (None, []))
+
+    results = engine.run([track("a")])
+
+    assert results[0]["ok"] is False
+    assert results[0]["url"] == "https://youtube/a"
+    assert len(calls) == 2
+
+
+def test_is_transient_error():
+    assert download_engine.is_transient_error("HTTP Error 403: Forbidden")
+    assert not download_engine.is_transient_error("HTTP Error 429")
+    assert not download_engine.is_transient_error("This video is DRM protected")

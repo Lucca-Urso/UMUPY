@@ -1,0 +1,162 @@
+import { useEffect, useState } from 'react'
+import { call } from '../api'
+import { Button, Card, ErrorBox, Notice, PageHeader, ProgressCard, SelectionHeader } from '../components/ui'
+import LinkList, { detectProvider } from '../components/LinkList'
+import TrackList from '../components/TrackList'
+import ScanFolders from '../components/ScanFolders'
+import DownloadRunner from '../components/DownloadRunner'
+import { usePolling } from '../hooks/usePolling'
+
+export default function Downloader({ onBack }) {
+  const [step, setStep] = useState('setup')
+  const [links, setLinks] = useState([''])
+  const [scanEnabled, setScanEnabled] = useState(false)
+  const [selectedFolders, setSelectedFolders] = useState(new Set(['__all__']))
+  const [checked, setChecked] = useState(new Set())
+  const [error, setError] = useState(null)
+  const [spotify, setSpotify] = useState(null)
+  const [status] = usePolling('get_analysis_status', step === 'analyzing')
+
+  useEffect(() => {
+    call('spotify_ready').then(setSpotify)
+  }, [])
+
+  const validLinks = links.map((l) => l.trim()).filter((l) => l && detectProvider(l))
+  const needsSpotify = validLinks.some((l) => detectProvider(l) === 'spotify') && spotify && !spotify.ready
+
+  useEffect(() => {
+    if (step !== 'analyzing' || !status || status.running) return
+    if (status.error) {
+      setError(status.error)
+      setStep('setup')
+    } else if (!status.matched.length) {
+      setError('No downloadable tracks were found for these links.')
+      setStep('setup')
+    } else {
+      setChecked(new Set(status.matched.filter((v) => !v.duplicate).map((v) => v.id)))
+      setStep('select')
+    }
+  }, [status, step])
+
+  const analyze = async () => {
+    setError(null)
+    setStep('analyzing')
+    await call('start_analysis', validLinks, scanEnabled ? [...selectedFolders] : null)
+  }
+
+  const toggle = (id) =>
+    setChecked((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+
+  const reset = () => {
+    setStep('setup')
+    setLinks([''])
+    setError(null)
+  }
+
+  const operation = validLinks.every((l) => detectProvider(l) === 'youtube') ? 'youtube' : 'spotify'
+
+  return (
+    <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-8 pb-12">
+      <PageHeader title="Downloader" subtitle="MP3 with embedded artwork from YouTube, Spotify or SoundCloud" onBack={onBack} />
+
+      {step === 'setup' && (
+        <div className="flex flex-col gap-5">
+          <LinkList links={links} onChange={setLinks} placeholder="https://open.spotify.com/playlist/... or youtube.com/... or soundcloud.com/..." />
+
+          {needsSpotify && (
+            <Notice>
+              Spotify links need a one-time setup. Open Setup from the home screen, then come back here.
+            </Notice>
+          )}
+
+          <ScanFolders
+            enabled={scanEnabled}
+            onEnabledChange={setScanEnabled}
+            selection={selectedFolders}
+            onSelectionChange={setSelectedFolders}
+          />
+
+          <ErrorBox>{error}</ErrorBox>
+
+          <Button onClick={analyze} disabled={!validLinks.length || needsSpotify} className="self-end">
+            Continue
+          </Button>
+        </div>
+      )}
+
+      {step === 'analyzing' && (
+        <div className="flex flex-col gap-5">
+          <ProgressCard
+            label={status?.phase === 'matching' ? `Matching "${status.playlist}"` : 'Reading playlists...'}
+            processed={status?.processed ?? 0}
+            total={status?.total ?? 0}
+            current={status?.current}
+            color="#30d158"
+          />
+          {status?.sources?.length > 1 && (
+            <Card className="px-5 py-3 text-xs text-zinc-500">
+              {status.sources.map((s) => (
+                <p key={s.url} className="truncate">
+                  {s.name || s.url}
+                  {s.total ? ` · ${s.total} tracks` : ''}
+                  {s.error && <span className="text-[#ff6961]"> · {s.error}</span>}
+                </p>
+              ))}
+            </Card>
+          )}
+        </div>
+      )}
+
+      {step === 'select' && status && (
+        <div className="flex flex-col gap-5">
+          <SelectionHeader
+            title={status.playlist}
+            subtitle={`${checked.size} of ${status.matched.length} tracks selected${
+              status.unmatched.length ? ` · ${status.unmatched.length} not found` : ''
+            }`}
+            onSelectAll={() => setChecked(new Set(status.matched.map((v) => v.id)))}
+            onClear={() => setChecked(new Set())}
+          />
+
+          <TrackList tracks={status.matched} checked={checked} onToggle={toggle} />
+
+          {status.unmatched.length > 0 && (
+            <Card className="max-h-[180px] overflow-y-auto">
+              <div className="border-b border-white/[0.06] px-5 py-3 text-[13px] font-medium text-[#ff9f0a]">
+                Not found on any provider
+              </div>
+              {status.unmatched.map((track, index) => (
+                <p key={index} className="truncate border-t border-white/[0.05] px-5 py-2.5 text-sm text-zinc-500 first:border-t-0">
+                  {track.artists.length ? `${track.artists.join(', ')} - ` : ''}
+                  {track.title}
+                </p>
+              ))}
+            </Card>
+          )}
+
+          <div className="flex items-center justify-between">
+            <Button variant="ghost" onClick={reset}>
+              Back
+            </Button>
+            <Button onClick={() => setStep('downloading')} disabled={!checked.size}>
+              Download {checked.size} {checked.size === 1 ? 'track' : 'tracks'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {step === 'downloading' && status && (
+        <DownloadRunner
+          videos={status.matched.filter((v) => checked.has(v.id))}
+          playlistName={status.sources.length === 1 ? status.playlist : 'Mixed links'}
+          operation={operation}
+          onReset={reset}
+        />
+      )}
+    </div>
+  )
+}

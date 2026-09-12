@@ -669,6 +669,21 @@ def test_analysis_combines_spotify_and_soundcloud_sources(api, project_dir, monk
     assert items[0]["title"] == "https://example.com/nope"
 
 
+def test_analysis_requires_ffmpeg(api, project_dir, monkeypatch):
+    monkeypatch.setattr(yt_downloader, "find_ffmpeg", lambda: None)
+
+    api.start_analysis(SPOTIFY_URL)
+
+    assert api.get_analysis_status()["error"].startswith("FFmpeg not found")
+
+
+def test_start_download_sanitizes_playlist_folder(api, project_dir, monkeypatch):
+    monkeypatch.setattr(api, "_download_worker", lambda *_: None)
+    monkeypatch.setattr(yt_downloader, "get_today", lambda: "01_01")
+
+    assert api.start_download([VIDEO], playlist_name="A/B: Mix?") == str(project_dir / "Downloads" / "A B Mix_01_01")
+
+
 def test_analysis_with_only_invalid_url_fails(api, project_dir):
     api.start_analysis("https://example.com/nope")
 
