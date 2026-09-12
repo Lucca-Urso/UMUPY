@@ -12,6 +12,49 @@ BROWSERS = ["safari", "firefox", "chrome", "edge", "brave", "opera", "vivaldi", 
 CHROME_FAMILY = {"chrome", "edge", "brave", "opera", "vivaldi", "chromium"}
 LABELS = {"chrome": "Google Chrome", "edge": "Microsoft Edge", "brave": "Brave", "opera": "Opera", "vivaldi": "Vivaldi", "chromium": "Chromium", "firefox": "Firefox", "safari": "Safari"}
 COOKIE_TEST_URL = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+COOKIE_DOMAINS = (".youtube.com", ".google.com", "youtube.com", "google.com")
+NETSCAPE_HEADER = "# Netscape HTTP Cookie File"
+
+
+def parse_cookie_text(text):
+    lines = [line.rstrip("\r") for line in (text or "").strip().splitlines()]
+    rows = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        if "\t" not in stripped:
+            rows = []
+            break
+
+        parts = stripped.split("\t")
+
+        if len(parts) == 7:
+            rows.append(parts)
+        elif len(parts) == 6:
+            rows.append([*parts, ""])
+        else:
+            return None
+
+    if rows:
+        return rows
+
+    joined = " ".join(lines)
+
+    if "=" not in joined:
+        return None
+
+    joined = joined.split(":", 1)[1] if joined.lower().startswith("cookie:") else joined
+    pairs = [pair.strip() for pair in joined.split(";") if "=" in pair]
+    return [[".youtube.com", "TRUE", "/", "TRUE", "0", name.strip(), value.strip()] for name, value in (pair.split("=", 1) for pair in pairs)]
+
+
+def cookies_to_netscape(rows):
+    body = "\n".join("\t".join(row) for row in rows)
+    return f"{NETSCAPE_HEADER}\n# Saved by UMUPY\n{body}\n"
 
 
 def available_browsers():
@@ -49,7 +92,7 @@ def describe_cookie_test(browser, return_code, output):
         if "could not copy" in lowered or "permission denied" in lowered:
             hint = f" {label} is still running and locks its cookie file. Quit it completely (also from the system tray), then try again."
         elif "decrypt" in lowered or "dpapi" in lowered or "app-bound" in lowered or "app bound" in lowered:
-            hint = f" Recent {label} versions on Windows encrypt cookies so only the browser can read them. Use Firefox instead."
+            hint = f" Recent {label} versions on Windows encrypt cookies so only the browser can read them. Use Firefox, or paste the cookies manually below."
         elif "could not find" in lowered or "not found" in lowered:
             hint = " Is that browser installed on this computer?"
         elif browser in CHROME_FAMILY and platform.system() == "Windows":
@@ -132,6 +175,58 @@ class SetupApi:
 
         settings.save(cookies_browser=browser)
         return {"ok": True, "browser": browser}
+
+    def save_cookies_text(self, text):
+        rows = parse_cookie_text(text)
+
+        if not rows:
+            return {"error": "That does not look like cookies. Paste the export of a cookies.txt extension or the Cookie header from your browser."}
+
+        if not any(row[0].endswith(domain) for row in rows for domain in COOKIE_DOMAINS):
+            return {"error": "No youtube.com cookies found in the pasted text. Export them while youtube.com is open."}
+
+        path = os.path.join(yt_downloader.get_dependencies_directory(), "cookies.txt")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(cookies_to_netscape(rows))
+
+        spotify_converter.restrict_permissions(path)
+        settings.save(cookies_browser=None)
+
+        result = self.test_cookies_file(path)
+
+        if not result["ok"]:
+            os.remove(path)
+            return {"error": result["error"]}
+
+        return {"ok": True, "detail": f"{len(rows)} cookies saved. {result['detail']}", "path": path}
+
+    def clear_cookies_file(self):
+        path = yt_downloader.find_cookies()
+
+        if path:
+            os.remove(path)
+
+        return {"ok": True}
+
+    def test_cookies_file(self, path):
+        result = subprocess.run(
+            [*yt_downloader.yt_dlp_command(), "--cookies", path, "--simulate", "-v", "--print", "%(id)s", COOKIE_TEST_URL],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=yt_downloader.get_script_directory(),
+        )
+        output = (result.stdout or "") + "\n" + (result.stderr or "")
+        lines = output.splitlines()
+        error = next((line for line in lines if line.startswith("ERROR")), "")
+
+        if result.returncode != 0 or error:
+            return {"ok": False, "error": error or "yt-dlp could not use the pasted cookies."}
+
+        if not any("Found YouTube account cookies" in line for line in lines):
+            return {"ok": False, "error": "Cookies read, but no YouTube login was found in them. Export them while signed in."}
+
+        return {"ok": True, "detail": "YouTube login found."}
 
     def test_cookies(self, browser=None):
         browser = (browser or settings.load().get("cookies_browser") or "").strip().lower()

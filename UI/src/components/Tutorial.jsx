@@ -43,7 +43,7 @@ export const TUTORIALS = {
     purpose: 'One-time connections so UMUPY can read your playlists.',
     steps: [
       'Spotify: create a free app on the Spotify developer site and paste its two keys here.',
-      'YouTube cookies: pick the browser where you are signed in. Use a secondary Google account if you can.',
+      'YouTube cookies: pick the browser where you are signed in, or paste them manually if the browser blocks it. Use a secondary Google account if you can.',
       'FFmpeg converts audio. It ships with UMUPY; install it only if the check fails.',
     ],
   },

@@ -107,7 +107,7 @@ def test_describe_cookie_test_windows_hints(monkeypatch):
     assert "github.com" not in locked["error"]
 
     encrypted = setup_api.describe_cookie_test("edge", 1, "ERROR: Failed to decrypt with DPAPI")
-    assert "Use Firefox instead" in encrypted["error"]
+    assert "paste the cookies manually" in encrypted["error"]
 
     generic = setup_api.describe_cookie_test("brave", 1, "ERROR: something odd")
     assert "Firefox is the safest choice" in generic["error"]
@@ -180,3 +180,64 @@ def test_open_data_directory(api, project_dir, monkeypatch):
 
     assert api.open_data_directory() == str(project_dir)
     assert opened == [str(project_dir)]
+
+
+NETSCAPE = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tabc\n.google.com\tTRUE\t/\tTRUE\t0\tHSID\n"
+
+
+def test_parse_cookie_text_formats():
+    rows = setup_api.parse_cookie_text(NETSCAPE)
+    assert rows == [[".youtube.com", "TRUE", "/", "TRUE", "0", "SID", "abc"], [".google.com", "TRUE", "/", "TRUE", "0", "HSID", ""]]
+
+    header = setup_api.parse_cookie_text("Cookie: SID=abc; HSID=d=ef; junk")
+    assert [(r[5], r[6]) for r in header] == [("SID", "abc"), ("HSID", "d=ef")]
+    assert all(r[0] == ".youtube.com" for r in header)
+
+    assert setup_api.parse_cookie_text("") is None
+    assert setup_api.parse_cookie_text("nothing here") is None
+    assert setup_api.parse_cookie_text("a\tb\tc\n") is None
+    assert setup_api.cookies_to_netscape(header).startswith(setup_api.NETSCAPE_HEADER)
+
+
+def test_save_cookies_text_validates_and_stores(api, project_dir, monkeypatch):
+    assert "does not look like cookies" in api.save_cookies_text("oops")["error"]
+    assert "No youtube.com cookies" in api.save_cookies_text(".example.com\tTRUE\t/\tTRUE\t0\tA\tb")["error"]
+
+    outputs = iter([
+        SimpleNamespace(returncode=0, stdout="id\n", stderr="[debug] [youtube] Found YouTube account cookies\n"),
+        SimpleNamespace(returncode=0, stdout="id\n", stderr="nothing about login\n"),
+        SimpleNamespace(returncode=1, stdout="", stderr="ERROR: bad cookie file\n"),
+    ])
+    commands = []
+    monkeypatch.setattr(subprocess, "run", lambda command, **kwargs: commands.append(command) or next(outputs))
+    settings.save(cookies_browser="firefox")
+
+    result = api.save_cookies_text(NETSCAPE)
+
+    assert result["ok"] is True
+    assert result["detail"].startswith("2 cookies saved")
+    assert os.path.isfile(result["path"])
+    assert "--cookies" in commands[0] and result["path"] in commands[0]
+    assert settings.load()["cookies_browser"] is None
+    assert yt_downloader.cookies_arguments() == ["--cookies", result["path"]]
+    assert open(result["path"]).read().startswith("# Netscape HTTP Cookie File")
+
+    no_login = api.save_cookies_text(NETSCAPE)
+    assert "no YouTube login" in no_login["error"]
+    assert not os.path.exists(result["path"])
+
+    broken = api.save_cookies_text(NETSCAPE)
+    assert broken["error"] == "ERROR: bad cookie file"
+
+    assert api.clear_cookies_file() == {"ok": True}
+    (project_dir / "Dependencies" / "cookies.txt").write_text("x")
+    api.clear_cookies_file()
+    assert not (project_dir / "Dependencies" / "cookies.txt").exists()
+
+
+def test_describe_cookie_test_dpapi_points_to_manual_paste(monkeypatch):
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+
+    result = setup_api.describe_cookie_test("chrome", 1, "ERROR: Failed to decrypt with DPAPI. See https://github.com/yt-dlp/yt-dlp/issues/10927 for more info")
+
+    assert result["error"] == "ERROR: Failed to decrypt with DPAPI. Recent Google Chrome versions on Windows encrypt cookies so only the browser can read them. Use Firefox, or paste the cookies manually below."

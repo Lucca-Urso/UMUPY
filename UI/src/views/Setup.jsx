@@ -39,6 +39,9 @@ export default function Setup({ onBack }) {
   const [busy, setBusy] = useState(null)
   const [browser, setBrowser] = useState('')
   const [cookieMessage, setCookieMessage] = useState(null)
+  const [manual, setManual] = useState(false)
+  const [cookieText, setCookieText] = useState('')
+  const [manualMessage, setManualMessage] = useState(null)
   const tutorial = useTutorial()
 
   const refresh = () => call('setup_status').then((s) => {
@@ -74,8 +77,26 @@ export default function Setup({ onBack }) {
     if (result.ok) {
       await call('set_cookies_browser', browser)
       setCookieMessage({ ok: true, text: result.detail })
+      setManual(false)
     } else {
       setCookieMessage({ ok: false, text: result.error })
+      setManual(true)
+    }
+    setBusy(null)
+    refresh()
+  }
+
+  const saveManual = async () => {
+    setBusy('manual')
+    setManualMessage(null)
+    const result = await call('save_cookies_text', cookieText)
+    if (result.error) {
+      setManualMessage({ ok: false, text: result.error })
+    } else {
+      setManualMessage({ ok: true, text: result.detail })
+      setCookieText('')
+      setCookieMessage(null)
+      setBrowser('')
     }
     setBusy(null)
     refresh()
@@ -83,8 +104,10 @@ export default function Setup({ onBack }) {
 
   const clearCookies = async () => {
     await call('set_cookies_browser', '')
+    await call('clear_cookies_file')
     setBrowser('')
     setCookieMessage(null)
+    setManualMessage(null)
     refresh()
   }
 
@@ -161,11 +184,11 @@ export default function Setup({ onBack }) {
               {status.cookies.browser
                 ? `Using cookies from ${status.cookies.browser}.`
                 : status.cookies.file
-                  ? 'Using a cookies.txt file from the Dependencies folder.'
+                  ? 'Using cookies you pasted manually.'
                   : 'Not using a YouTube login.'}
             </span>
             <div className="flex gap-2">
-              {status.cookies.browser && (
+              {(status.cookies.browser || status.cookies.file) && (
                 <Button variant="ghost" onClick={clearCookies}>
                   Stop using
                 </Button>
@@ -174,6 +197,35 @@ export default function Setup({ onBack }) {
                 {busy === 'cookies' ? 'Checking...' : 'Test and use'}
               </Button>
             </div>
+          </div>
+
+          <div className="mt-5 border-t border-white/[0.06] pt-4">
+            <button onClick={() => setManual((v) => !v)} className="text-[13px] text-[#0a84ff] hover:underline">
+              {manual ? 'Hide manual option' : "Browser not working? Paste the cookies yourself"}
+            </button>
+            {manual && (
+              <div className="mt-3 flex flex-col gap-3">
+                <ol className="flex flex-col gap-1 text-[13px] text-zinc-500">
+                  <li>1. In your browser, install a "Get cookies.txt LOCALLY" extension (Chrome, Edge or Firefox).</li>
+                  <li>2. Open youtube.com while signed in, click the extension and choose Copy (or Export).</li>
+                  <li>3. Paste the text below. It is saved only on this computer.</li>
+                </ol>
+                <textarea
+                  value={cookieText}
+                  onChange={(e) => setCookieText(e.target.value)}
+                  rows={5}
+                  spellCheck={false}
+                  placeholder="# Netscape HTTP Cookie File&#10;.youtube.com&#9;TRUE&#9;/&#9;TRUE&#9;..."
+                  className="w-full resize-y rounded-xl border border-white/[0.1] bg-black/40 px-4 py-3 font-mono text-xs text-zinc-100 outline-none transition-colors focus:border-[#0a84ff]"
+                />
+                {manualMessage && (
+                  <p className={`text-sm ${manualMessage.ok ? 'text-[#30d158]' : 'text-[#ff6961]'}`}>{manualMessage.text}</p>
+                )}
+                <Button onClick={saveManual} disabled={!cookieText.trim() || busy === 'manual'} className="self-end">
+                  {busy === 'manual' ? 'Checking...' : 'Save cookies'}
+                </Button>
+              </div>
+            )}
           </div>
         </Section>
 
