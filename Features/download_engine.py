@@ -171,7 +171,11 @@ class DownloadEngine:
 
         try:
             while True:
-                ok, error_text = self.attempt(track, candidate, provider, retrying)
+                if candidate.get("unavailable"):
+                    ok, error_text = False, candidate["unavailable"]
+                else:
+                    ok, error_text = self.attempt(track, candidate, provider, retrying)
+
                 tried.append(provider)
 
                 if ok:

@@ -211,6 +211,21 @@ def test_next_candidate_without_remaining_providers(engine_factory):
     assert engine.next_candidate(track("a"), ["youtube", "soundcloud"]) == (None, [])
 
 
+def test_engine_skips_download_of_unavailable_track(engine_factory, monkeypatch):
+    engine, events, calls, _ = engine_factory({("y1", "youtube"): (0, None)})
+    monkeypatch.setattr(
+        matching, "find_download_source",
+        lambda t, clients, order=None: ({"id": "y1", "title": "YT", "url": "u", "source": "youtube", "score": 90}, []),
+    )
+    unavailable = {**track("a", "soundcloud"), "unavailable": "DRM protected"}
+
+    results = engine.run([unavailable])
+
+    assert results[0]["ok"] is True
+    assert [c["source"] for c in calls] == ["youtube"]
+    assert [(p["provider"], p["status"], p["error"]) for k, p in events if k == "attempt"][0] == ("soundcloud", "failed", "DRM protected")
+
+
 def test_engine_defaults(tmp_path):
     engine = DownloadEngine(str(tmp_path), "/bin/ffmpeg")
 

@@ -45,6 +45,36 @@ def fetch_metadata(url, start, end):
     return entries, stderr
 
 
+def slug_to_title(url):
+    slug = url.rstrip("/").rsplit("/", 1)[-1]
+
+    if slug.isdigit():
+        return ""
+
+    return re.sub(r"[-_]+", " ", slug).strip().title()
+
+
+def unavailable_reason(stderr, track_id):
+    for line in stderr.splitlines():
+        if track_id and f"] {track_id}:" in line and "ERROR" in line:
+            return line.split(":", 2)[-1].strip()
+
+    if "geo restriction" in stderr:
+        return "Not available in your location"
+
+    return "Unavailable on SoundCloud"
+
+
+def placeholder_track(url, stderr):
+    track_id = url.rstrip("/").rsplit("/", 1)[-1]
+    track_id = track_id if track_id.isdigit() else None
+    title = slug_to_title(url)
+    return base.make_track(
+        NAME, track_id or url, title or f"Unknown track {track_id}", url=url,
+        unavailable=unavailable_reason(stderr, track_id), searchable=bool(title),
+    )
+
+
 def resolve(url):
     if not is_playlist(url):
         entries, stderr, _ = ytdlp.dump_json(["--simulate", "--no-playlist"], url)
@@ -62,16 +92,32 @@ def resolve(url):
     with ThreadPoolExecutor(max_workers=METADATA_WORKERS) as pool:
         batches = list(pool.map(lambda r: fetch_metadata(url, *r), ranges))
 
+    resolved = {}
+    errors = ""
+
+    for entries, batch_stderr in batches:
+        errors += batch_stderr
+
+        for entry in entries:
+            if entry.get("id"):
+                resolved[str(entry["id"])] = entry_to_track(entry)
+
     tracks = []
     seen = set()
 
-    for entries, _ in batches:
-        for entry in entries:
-            track = entry_to_track(entry)
+    for track_url in urls:
+        track_id = track_url.rstrip("/").rsplit("/", 1)[-1]
+        track = resolved.get(track_id)
 
-            if entry.get("id") and track["id"] not in seen:
-                seen.add(track["id"])
-                tracks.append(track)
+        if track is None:
+            track = next((t for t in resolved.values() if t["url"] == track_url and t["id"] not in seen), None)
+
+        if track is None:
+            track = placeholder_track(track_url, errors)
+
+        if track["id"] not in seen:
+            seen.add(track["id"])
+            tracks.append(track)
 
     return {"name": name, "tracks": tracks, "error": None if tracks else "Could not read tracks from this set"}
 

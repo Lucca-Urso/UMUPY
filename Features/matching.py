@@ -15,7 +15,7 @@ def normalize(track):
 def search_order(track):
     source = track["source"]
 
-    if providers.get(source).DOWNLOADABLE:
+    if providers.get(source).DOWNLOADABLE and not track.get("unavailable"):
         return [source, *providers.fallbacks_for(source)]
 
     return providers.fallbacks_for(source)
@@ -44,11 +44,17 @@ def find_download_source(track, clients, on_attempt=None, order=None):
     attempts = []
     last_error = None
 
+    if track.get("unavailable"):
+        attempts.append({"provider": track["source"], "status": "error", "error": track["unavailable"], "score": None})
+
+        if track.get("searchable") is False:
+            return None, attempts
+
     for position, name in enumerate(order):
         if on_attempt:
-            on_attempt(name, position > 0)
+            on_attempt(name, position > 0 or bool(attempts))
 
-        if name == track["source"]:
+        if name == track["source"] and not track.get("unavailable"):
             match = attach_origin({**track, "score": 100}, track, name)
             attempts.append({"provider": name, "status": "matched", "error": None, "score": 100})
             return match, attempts

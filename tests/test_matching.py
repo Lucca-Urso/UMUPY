@@ -121,6 +121,41 @@ def test_custom_order_skips_own_source(monkeypatch):
     assert attempts[0]["provider"] == "youtube"
 
 
+def test_unavailable_source_track_goes_straight_to_fallback(monkeypatch):
+    monkeypatch.setattr(youtube, "search", lambda client, track: dict(YT_MATCH))
+    track = {"source": "soundcloud", "id": "sc9", "title": "T", "artists": ["A"], "unavailable": "DRM protected"}
+    events = []
+
+    assert matching.search_order(track) == ["youtube"]
+
+    match, attempts = matching.find_download_source(track, {"youtube": "c"}, on_attempt=lambda p, r: events.append((p, r)))
+
+    assert match["source"] == "youtube"
+    assert attempts[0] == {"provider": "soundcloud", "status": "error", "error": "DRM protected", "score": None}
+    assert attempts[1]["status"] == "matched"
+    assert events == [("youtube", True)]
+
+
+def test_unavailable_track_with_no_fallback_result(monkeypatch):
+    monkeypatch.setattr(youtube, "search", lambda client, track: None)
+    track = {"source": "soundcloud", "id": "sc9", "title": "T", "artists": ["A"], "unavailable": "DRM protected"}
+
+    match, attempts = matching.find_download_source(track, {"youtube": "c"})
+
+    assert match is None
+    assert [a["status"] for a in attempts] == ["error", "not_found"]
+
+
+def test_unsearchable_unavailable_track_is_not_searched(monkeypatch):
+    monkeypatch.setattr(youtube, "search", lambda client, track: pytest.fail("must not search"))
+    track = {"source": "soundcloud", "id": "1", "title": "Unknown track 1", "artists": [], "unavailable": "DRM", "searchable": False}
+
+    match, attempts = matching.find_download_source(track, {})
+
+    assert match is None
+    assert attempts == [{"provider": "soundcloud", "status": "error", "error": "DRM", "score": None}]
+
+
 def test_describe_attempt_and_label():
     assert matching.describe_attempt({"provider": "youtube", "status": "matched", "score": 90}) == "matched on youtube (score 90)"
     assert matching.describe_attempt({"provider": "soundcloud", "status": "error", "error": "x"}) == "soundcloud failed: x"

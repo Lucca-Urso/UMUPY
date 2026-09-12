@@ -169,7 +169,7 @@ def test_soundcloud_resolve_set(monkeypatch):
         calls.append(args)
 
         if "--flat-playlist" in args:
-            return ([{"id": str(i), "url": f"u{i}", "playlist_title": "Soulhack"} for i in range(1, 13)], "", 0)
+            return ([{"id": str(i), "url": f"https://soundcloud.com/forss/{i}", "playlist_title": "Soulhack"} for i in range(1, 13)], "", 0)
 
         start, end = map(int, args[args.index("--playlist-items") + 1].split("-"))
         entries = [sc_entry(i, f"Track {i}") for i in range(start, end + 1)]
@@ -201,8 +201,45 @@ def test_soundcloud_resolve_set_errors(monkeypatch):
     monkeypatch.setattr(ytdlp, "dump_json", dump_json)
     result = soundcloud.resolve("https://soundcloud.com/a/sets/b")
     assert result["name"] == "S"
-    assert result["tracks"] == []
-    assert "Could not read tracks" in result["error"]
+    assert result["error"] is None
+    assert result["tracks"][0]["unavailable"] == "Unavailable on SoundCloud"
+
+
+def test_soundcloud_resolve_set_keeps_unavailable_tracks(monkeypatch):
+    def dump_json(args, url):
+        if "--flat-playlist" in args:
+            return ([
+                {"id": "1", "url": "https://soundcloud.com/a/first-song", "playlist_title": "S"},
+                {"id": "2", "url": "https://api-v2.soundcloud.com/tracks/2"},
+                {"id": "3", "url": "https://api-v2.soundcloud.com/tracks/3"},
+                {"id": "4", "url": "https://soundcloud.com/b/bodies-ivory-it-remix"},
+            ], "", 0)
+
+        entries = [sc_entry(1, "First Song", url="https://soundcloud.com/a/first-song")]
+        stderr = "ERROR: [soundcloud] 2: This video is DRM protected\nERROR: [soundcloud] This video is not available from your location due to geo restriction\n"
+        return (entries, stderr, 1)
+
+    monkeypatch.setattr(ytdlp, "dump_json", dump_json)
+
+    result = soundcloud.resolve("https://soundcloud.com/a/sets/b")
+
+    tracks = result["tracks"]
+    assert [t["id"] for t in tracks] == ["1", "2", "3", "https://soundcloud.com/b/bodies-ivory-it-remix"]
+    assert "unavailable" not in tracks[0]
+    assert tracks[1]["unavailable"] == "This video is DRM protected"
+    assert tracks[1]["title"] == "Unknown track 2"
+    assert tracks[1]["searchable"] is False
+    assert tracks[3]["searchable"] is True
+    assert tracks[2]["unavailable"] == "Not available in your location"
+    assert tracks[3]["title"] == "Bodies Ivory It Remix"
+    assert tracks[3]["unavailable"] == "Not available in your location"
+
+
+def test_soundcloud_helpers_for_unavailable_tracks():
+    assert soundcloud.slug_to_title("https://soundcloud.com/x/my-great_track") == "My Great Track"
+    assert soundcloud.slug_to_title("https://api-v2.soundcloud.com/tracks/99") == ""
+    assert soundcloud.unavailable_reason("", None) == "Unavailable on SoundCloud"
+    assert soundcloud.unavailable_reason("ERROR: [soundcloud] 5: Private track", "5") == "Private track"
 
 
 def test_soundcloud_search(monkeypatch):
