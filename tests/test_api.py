@@ -491,6 +491,79 @@ def test_rekordbox_create_guards(api, monkeypatch):
     assert "RekordBox is running" in api.rekordbox_create(["New"])["error"]
 
 
+def test_rekordbox_sync_plan_and_apply(api, project_dir, monkeypatch, tmp_path):
+    import rekordbox_playlist_creator as rpc
+    import rekordbox_sync
+
+    folder = tmp_path / "Mix"
+    folder.mkdir()
+    (folder / "a.mp3").write_bytes(b"")
+    db = SimpleNamespace(close=lambda: None, db_directory=str(tmp_path))
+    plan = {
+        "playlist": "Mix", "exists": False, "folder": str(folder),
+        "add": [{"path": str(folder / "a.mp3"), "title": "A", "artist": "", "in_collection": False}],
+        "keep": [], "remove": [{"song_id": 1, "path": "/old.mp3", "title": "Old", "artist": ""}],
+    }
+    monkeypatch.setattr(rpc, "open_database", lambda: db)
+    monkeypatch.setattr(rpc, "rekordbox_is_running", lambda: False)
+    monkeypatch.setattr(rekordbox_sync, "plan_sync", lambda db, folder, name: plan)
+    monkeypatch.setattr(
+        rekordbox_sync, "apply_sync",
+        lambda db, plan, add, remove, backup_root: {
+            "backup": os.path.join(backup_root, "master_x.db"), "created": True,
+            "added": add, "removed": ["/old.mp3"], "errors": [{"path": None, "error": "boom"}],
+        },
+    )
+
+    assert api.rekordbox_sync_plan("") == {"error": "Choose an existing folder first."}
+    assert api.rekordbox_sync_plan(str(tmp_path / "missing"))["error"].startswith("Choose")
+
+    result = api.rekordbox_sync_plan(str(folder))
+
+    assert result["playlist"] == "Mix"
+    assert result["running"] is False
+    assert result["add"][0]["title"] == "A"
+    assert result["remove"][0]["song_id"] == 1
+    assert result["keep"] == 0
+
+    applied = api.rekordbox_sync_apply([str(folder / "a.mp3")], [1])
+
+    assert applied["created"] is True
+    assert applied["added"] == 1
+    assert applied["removed"] == 1
+    assert applied["backup"].endswith("master_x.db")
+    run = history.list_runs()[0]
+    assert run["operation"] == "rekordbox_sync"
+    assert run["status"] == "completed_with_errors"
+    statuses = [(i["title"], i["status"]) for i in history.get_run(run["id"])["items"]]
+    assert statuses == [("Database backup", "ok"), ("Mix", "ok"), ("a.mp3", "ok"), ("old.mp3", "ok"), ("", "failed")]
+
+
+def test_rekordbox_sync_guards(api, monkeypatch, tmp_path):
+    import rekordbox_playlist_creator as rpc
+
+    assert api.rekordbox_sync_apply([], []) == {"error": "Nothing planned yet."}
+
+    monkeypatch.setattr(rpc, "open_database", lambda: (_ for _ in ()).throw(FileNotFoundError("no db")))
+    assert "Could not open the RekordBox database" in api.rekordbox_sync_plan(str(tmp_path))["error"]
+
+    closed = []
+    api._rekordbox = {"db": SimpleNamespace(close=lambda: closed.append(True)), "results": []}
+    monkeypatch.setattr(rpc, "open_database", lambda: SimpleNamespace(db_directory=str(tmp_path)))
+    monkeypatch.setattr(rpc, "rekordbox_is_running", lambda: True)
+    import rekordbox_sync
+    monkeypatch.setattr(rekordbox_sync, "plan_sync", lambda db, folder, name: {"playlist": "P", "exists": False, "folder": folder, "add": [], "keep": [], "remove": []})
+
+    result = api.rekordbox_sync_plan(str(tmp_path), "P")
+
+    assert closed == [True]
+    assert result["running"] is True
+    assert "RekordBox is running" in api.rekordbox_sync_apply([], [])["error"]
+
+    api._rekordbox = {"db": SimpleNamespace(close=lambda: (_ for _ in ()).throw(RuntimeError("x")))}
+    api._open_rekordbox()
+
+
 def test_history_passthrough(api, project_dir):
     run_id = history.start_run("youtube_download", target="x")
 
