@@ -16,3 +16,5 @@ dist/
 *.spec
 !umupy.spec
 .DS_Store
+.pytest_cache/
+.coverage

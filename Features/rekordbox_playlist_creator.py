@@ -30,7 +30,7 @@ def parse_txt_playlist(txt_path):
 
     try:
         content = txt_path.read_text(encoding="utf-16")
-    except UnicodeDecodeError:
+    except UnicodeError:
         content = txt_path.read_text(encoding="utf-8", errors="replace")
 
     lines = content.splitlines()
