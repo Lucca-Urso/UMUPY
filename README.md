@@ -1,130 +1,81 @@
 # UMUPY — Urso Music Uploader Python
 
-Desktop app to download YouTube music as high-quality MP3 files with artwork embedding optimized for **Rekordbox** and **Pioneer CDJs**, convert Spotify playlists to YouTube, create Rekordbox playlists and keep local folders in sync with Spotify.
+Desktop app that turns online playlists into MP3 files ready for **RekordBox** and **Pioneer CDJs**, and keeps your local folders and RekordBox playlists in sync with them. Works on **macOS** and **Windows**, fully offline except for the downloads themselves.
 
-Supports **Windows** and **macOS**.
+## What it does
 
----
+- **Downloader** — paste YouTube, Spotify or SoundCloud links (as many as you want). Tracks are matched across services when one of them does not have the song, downloaded in parallel as MP3 with square 800×800 artwork, and tagged so duplicates are recognised later.
+- **Synchronizer** — pick what should stay in sync (a local folder or a RekordBox playlist) and where the music comes from (online playlists or a local folder). Shows what is missing and what is extra; nothing is downloaded, deleted or written to RekordBox without your confirmation.
+- **Playlist Builder** — create RekordBox playlists from a `.xml`/`.txt` playlist file or a folder of music.
+- **History** — every operation with per-track results and the reason for each failure.
+- **Setup** — connect Spotify and your YouTube login from inside the app. No files to edit.
 
-## Requirements
+## Install and run
 
-- **Python 3.10+** — [python.org](https://www.python.org/downloads/)
-- **FFmpeg** — `brew install ffmpeg` (macOS) or [ffmpeg.org](https://ffmpeg.org/download.html)
-- **Deno** — `brew install deno` (macOS) or [deno.com](https://deno.com). Required by yt-dlp to solve YouTube's JavaScript challenges; without it downloads fail with 403 errors.
-- **Node.js 18+** — only for building the frontend
-- Python dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-For **FFmpeg**, either install it globally so it is available on your system PATH, or place the `ffmpeg` / `ffmpeg.exe` binary inside `Dependencies/` — it is detected automatically either way.
-
-## Running the App
+Requirements: [Python 3.10+](https://www.python.org/downloads/), [Node.js 18+](https://nodejs.org) (only to build the interface), [FFmpeg](https://ffmpeg.org/download.html) and [Deno](https://deno.com) (or drop their binaries in `bin/`).
 
 ```bash
-cd UI && npm install && npm run build && cd ..   # first time only
-python3 app.py
+./project --setup     # Windows: project --setup
+./project --run
 ```
 
-The UMUPY window opens with one card per feature:
+`--setup` installs the Python packages, builds the interface and runs the tests. Other commands: `--test`, `--ui` (rebuild the interface), `--dev` (interface with hot reload).
 
-- **YouTube Downloader** — paste a video or playlist URL, optionally scan `Downloads/` folders for duplicates, review the track list with checkboxes and run the batch download with live progress and a final failure report.
-- **Spotify Converter** — paste a Spotify playlist URL; each track is matched to its best YouTube equivalent with live progress, then downloaded through the same pipeline.
-- **RekordBox Playlists** — pick a `.txt`/`.xml` export, a folder of exports, or a downloaded music folder; preview every playlist and track before writing them into the RekordBox database (RekordBox must be closed).
-- **Playlist Sync** — compare a Spotify playlist against a local folder: delete local orphans (with confirmation) and download missing tracks straight into the folder.
-- **History** — browse every past operation with per-track status and error messages.
+Packaged app: `python3 -m PyInstaller --noconfirm umupy.spec` produces `dist/UMUPY.app` (macOS) or `dist/UMUPY/UMUPY.exe` (Windows). Binaries placed in `bin/` are shipped inside it. The packaged app keeps its data in `~/UMUPY/`.
 
-Development mode (frontend hot reload):
+## Dependencies
 
-```bash
-cd UI && npm run dev &
-python3 app.py --dev
-```
+| Package | Role |
+|---|---|
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) + [yt-dlp-ejs](https://github.com/yt-dlp/yt-dlp/wiki/EJS) | Download and metadata for YouTube and SoundCloud |
+| [spotipy](https://spotipy.readthedocs.io) | Read Spotify playlists |
+| [ytmusicapi](https://ytmusicapi.readthedocs.io) | Find YouTube equivalents of Spotify tracks |
+| [thefuzz](https://github.com/seatgeek/thefuzz) | Fuzzy title/artist matching |
+| [mutagen](https://mutagen.readthedocs.io) | Read and write MP3 tags |
+| [Pillow](https://pillow.readthedocs.io) | Artwork processing |
+| [pyrekordbox](https://pyrekordbox.readthedocs.io) | Read and write the RekordBox database |
+| [pywebview](https://pywebview.flowrl.com) | Desktop window for the React interface |
+| FFmpeg, Deno | Audio conversion and YouTube challenge solving |
 
-After changing the frontend, rebuild it once so the app picks it up: `cd UI && npm run build`
-
-## Packaging (clickable app)
-
-```bash
-pip install pyinstaller
-cd UI && npm run build && cd ..
-python3 -m PyInstaller --noconfirm umupy.spec
-```
-
-On macOS the bundle lands in `dist/UMUPY.app` — move it to Applications if you like. On Windows the same command produces `dist/UMUPY/UMUPY.exe`. The packaged app keeps its data in `~/UMUPY/` (`Downloads/`, `Dependencies/` with cookies and Spotify credentials, `History/`). FFmpeg and Deno must be installed on the system.
-
----
-
-## Project Structure
+## Project structure
 
 ```
-UMUPY/
-├── app.py                       Desktop app entry point (pywebview)
-├── umupy.spec                   PyInstaller packaging recipe
-├── Features/                    Backend scripts (one per feature)
-│   ├── yt_downloader.py         Download YouTube videos/playlists as MP3
-│   ├── fix_artwork.py           Embed square 800x800 artwork + tags into MP3s
-│   ├── rekordbox_playlist_creator.py  Create RekordBox playlists from exports or folders
-│   ├── spotify_converter.py     Convert Spotify playlists to YouTube downloads
-│   ├── sync_playlists.py        Sync a local folder against a Spotify playlist
-│   └── history.py               Operation history (SQLite + txt logs)
-├── Dependencies/                External binaries and credentials (not versioned)
-│   ├── ffmpeg.exe               FFmpeg binary (Windows fallback)
-│   ├── ffprobe.exe              FFprobe binary (Windows fallback)
-│   ├── cookies.txt              YouTube cookies (optional)
-│   └── spotify_credentials.json Spotify API credentials
-├── Downloads/                   Where downloaded music lands (contents not versioned)
-├── History/                     Operation logs and local database (not versioned)
-├── UI/                          Frontend (React + Vite + Tailwind, via pywebview)
-└── requirements.txt
+app.py                Entry point (window, packaged-app helpers)
+project.py            Task runner behind the `project` command
+api/                  Methods exposed to the interface, one module per action
+  downloader.py       Link analysis and downloads
+  synchronizer.py     Folder comparison and orphan cleanup
+  chain.py            Online playlist → folder → RekordBox in one flow
+  playlist_builder.py RekordBox playlist creation and folder sync
+  setup.py            Spotify keys, browser cookies, tool checks
+Features/             Core logic, also usable from the terminal
+  providers/          youtube, spotify, soundcloud (common interface)
+  matching.py         Cross-provider fallback search
+  download_engine.py  Parallel downloads, rate limits, automatic pause on blocks
+  library.py          Index of local MP3s by provider id
+  rekordbox_sync.py   Folder ↔ RekordBox playlist diff and apply
+  fix_artwork.py      Artwork + YOUTUBE_ID / SPOTIFY_ID / SOUNDCLOUD_ID tags
+  history.py          SQLite log of every run
+UI/                   React + Vite + Tailwind interface (views, components, hooks)
+tests/                Unit tests, one file per feature (pytest, ≥95% coverage)
+Dependencies/         Your credentials and settings (never committed)
+Downloads/ History/   Music and logs (never committed)
 ```
 
-## YouTube Cookies
+## Interface
 
-YouTube requires authentication to access age-restricted content and avoid rate limiting. Export your browser cookies using an extension such as **Get cookies.txt LOCALLY** and place the resulting file inside `Dependencies/`. Prefer a throwaway Google account, and export from a private/incognito session so the browser does not rotate the cookies right after export.
+Home → **Downloader · Synchronizer · Playlist Builder · History**, plus a Setup link in the footer. Every screen has a `?` button with a three-line explanation. The Synchronizer always follows one direction: online playlist → local folder → RekordBox.
 
-## Spotify Setup (one time)
+## Setup notes
 
-Required by the Spotify Converter and Playlist Sync:
+- **Spotify**: create a free app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) with redirect URI `http://127.0.0.1:8888/callback` and paste its Client ID and Secret in Setup. The first use opens the browser once to authorize.
+- **YouTube login (optional)**: in Setup, choose the browser where you are signed in. Safari and Firefox are read directly; Chrome-family browsers ask macOS for permission to unlock their cookies. Use a secondary Google account when possible.
+- **RekordBox**: close it before applying changes. A copy of `master.db` is saved in `History/rekordbox_backups/` before every write.
 
-1. Create a free app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) with redirect URI `http://127.0.0.1:8888/callback`
-2. Save `Dependencies/spotify_credentials.json`:
+## Safety
 
-```json
-{"client_id": "...", "client_secret": "...", "redirect_uri": "http://127.0.0.1:8888/callback"}
-```
+Downloads run at most 3 at a time for YouTube and 2 for SoundCloud, with delays and a global hourly cap. If a service answers with a rate limit or a bot check, all downloads pause automatically and resume later. Credentials stay in `Dependencies/` with restricted permissions and are ignored by git.
 
-The first conversion opens the browser once for Spotify login; the token is cached afterwards.
+## References
 
-## Command Line Usage
-
-Every feature also works standalone in the terminal:
-
-```bash
-python3 Features/yt_downloader.py
-python3 Features/spotify_converter.py [playlist_url]
-python3 Features/rekordbox_playlist_creator.py [source_path]
-python3 Features/sync_playlists.py [playlist_url] [local_folder]
-python3 Features/fix_artwork.py "path/to/file.mp3" [youtube_video_id] [spotify_track_id]
-```
-
-### Downloader behavior
-
-- **Single video**: the MP3 is saved into the project's `Downloads/` folder.
-- **Playlist**: a `Downloads/PlaylistName_DD_MM/` folder is created and each track is saved inside it.
-- **Duplicate detection**: choose which `Downloads/` subfolders to scan (or all); every MP3 is indexed by its embedded `YOUTUBE_ID`/`SPOTIFY_ID` tags and already-downloaded tracks are skipped.
-
-### Artwork processing
-
-After each track downloads, `fix_artwork.py` runs automatically and:
-
-1. Reads the thumbnail saved by yt-dlp
-2. Center-crops it to a square
-3. Resizes it to **800×800px** (Pioneer CDJ maximum)
-4. Re-saves it as **JPEG at 300 DPI** (Rekordbox requirement)
-5. Embeds it into the MP3 as an **ID3v2.3 APIC tag**, along with the `YOUTUBE_ID` (and `SPOTIFY_ID` when converted from Spotify) tags used for duplicate detection and sync
-
-## History
-
-Every operation (downloads, conversions, RekordBox imports, sync checks and deletions) is recorded in `History/history.db` (SQLite) with a unique run id, timestamps and per-track status including error messages, plus a human-readable log file per run in `History/logs/`. Browse it in the app through the History screen.
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) · [Spotify for Developers](https://developer.spotify.com) · [pyrekordbox](https://github.com/dylanljones/pyrekordbox) · [RekordBox XML format](https://cdn.rekordbox.com/files/20200410160904/xml_format_list.pdf) · [FFmpeg](https://ffmpeg.org) · [Deno](https://deno.com)
