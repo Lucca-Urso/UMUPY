@@ -294,7 +294,6 @@ def test_main_full_flow_with_duplicate_scan(monkeypatch, capsys):
     ]
     prepare_main(monkeypatch, matched)
     monkeypatch.setattr(yt_downloader, "select_duplicate_scan_folders", lambda: ["/scan"])
-    monkeypatch.setattr(yt_downloader, "build_library_index", lambda _: {"yt-dup": "p"})
     monkeypatch.setattr(spotify_converter, "build_spotify_index", lambda _: {"s3": "p"})
     downloaded = []
     monkeypatch.setattr(spotify_converter, "download_videos", lambda videos, _: downloaded.extend(videos) or "/out")
@@ -303,15 +302,14 @@ def test_main_full_flow_with_duplicate_scan(monkeypatch, capsys):
 
     spotify_converter.main()
 
-    assert [v["id"] for v in downloaded] == ["yt-new"]
+    assert [v["id"] for v in downloaded] == ["yt-dup", "yt-new"]
     assert "/out" in capsys.readouterr().out
 
 
 def test_main_scan_removes_everything(monkeypatch, capsys):
     prepare_main(monkeypatch, [{"id": "yt-dup", "title": "Dup", "url": "u", "spotify_id": "s1"}])
     monkeypatch.setattr(yt_downloader, "select_duplicate_scan_folders", lambda: ["/scan"])
-    monkeypatch.setattr(yt_downloader, "build_library_index", lambda _: {"yt-dup": "p"})
-    monkeypatch.setattr(spotify_converter, "build_spotify_index", lambda _: {})
+    monkeypatch.setattr(spotify_converter, "build_spotify_index", lambda _: {"s1": "p"})
     monkeypatch.setattr("builtins.input", lambda _: "y")
 
     spotify_converter.main()

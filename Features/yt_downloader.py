@@ -133,40 +133,15 @@ def select_duplicate_scan_folders():
 
 
 def build_library_index(selected_folders):
-    from mutagen.mp3 import MP3
-
-    downloaded_videos = {}
+    import library
 
     print("\n[Library] Building in-memory index...\n")
 
     for folder_path in selected_folders:
         print(f"  Scanning: {os.path.basename(folder_path)}")
 
-        for root, _, files in os.walk(folder_path):
-            for file_name in files:
-                if not file_name.lower().endswith(".mp3"):
-                    continue
-
-                audio_path = os.path.join(root, file_name)
-
-                try:
-                    audio_file = MP3(audio_path)
-
-                    if not audio_file.tags:
-                        continue
-
-                    youtube_video_id = None
-
-                    for frame in audio_file.tags.getall("TXXX"):
-                        if frame.desc == "YOUTUBE_ID":
-                            youtube_video_id = frame.text[0]
-                            break
-
-                    if youtube_video_id:
-                        downloaded_videos[youtube_video_id] = audio_path
-
-                except Exception:
-                    print(f"[WARNING] Could not index: {audio_path}")
+    index = library.build_index(selected_folders, on_error=lambda path: print(f"[WARNING] Could not index: {path}"))
+    downloaded_videos = dict(index.by_source["youtube"])
 
     print(f"\n[Library] Indexed {len(downloaded_videos)} musics.\n")
 

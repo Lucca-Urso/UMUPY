@@ -10,47 +10,9 @@ SYNC_MATCH_THRESHOLD = 78
 
 
 def build_local_index(folder):
-    from mutagen import File as read_audio
-    from mutagen.mp3 import MP3
+    import library
 
-    files = []
-
-    for root, _, names in os.walk(folder):
-        for name in names:
-            if not name.lower().endswith(".mp3"):
-                continue
-
-            path = os.path.join(root, name)
-            entry = {
-                "path": path,
-                "filename": os.path.splitext(name)[0],
-                "title": "",
-                "artist": "",
-                "spotify_id": None,
-                "youtube_id": None,
-            }
-
-            try:
-                audio = MP3(path)
-
-                if audio.tags:
-                    for frame in audio.tags.getall("TXXX"):
-                        if frame.desc == "SPOTIFY_ID":
-                            entry["spotify_id"] = frame.text[0]
-                        elif frame.desc == "YOUTUBE_ID":
-                            entry["youtube_id"] = frame.text[0]
-
-                easy_file = read_audio(path, easy=True)
-
-                if easy_file and easy_file.tags:
-                    entry["title"] = (easy_file.tags.get("title") or [""])[0]
-                    entry["artist"] = (easy_file.tags.get("artist") or [""])[0]
-            except Exception:
-                pass
-
-            files.append(entry)
-
-    return files
+    return library.build_index([folder]).files
 
 
 def compare_playlist_with_folder(tracks, local_files):

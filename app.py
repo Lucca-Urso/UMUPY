@@ -16,6 +16,7 @@ if platform.system() == "Darwin":
 
 import yt_downloader
 import history
+import library
 
 
 OPERATION_LABEL = {
@@ -78,9 +79,9 @@ class UmupyApi:
 
     def _build_scan_index(self, scan_folders):
         if scan_folders is None:
-            return {}
+            return library.LibraryIndex()
 
-        return yt_downloader.build_library_index(self._scan_paths(scan_folders))
+        return library.build_index(self._scan_paths(scan_folders))
 
     def list_download_folders(self):
         downloads_directory = yt_downloader.get_downloads_directory()
@@ -99,7 +100,7 @@ class UmupyApi:
             error = yt_downloader.probe_url_error(url, script_directory)
 
         for video in videos:
-            video["duplicate"] = video["id"] in index
+            video["duplicate"] = index.contains("youtube", video["id"])
 
         return {
             "playlist": playlist_name or None,
@@ -224,11 +225,6 @@ class UmupyApi:
 
         try:
             index = self._build_scan_index(scan_folders)
-            spotify_index = (
-                spotify_converter.build_spotify_index(self._scan_paths(scan_folders))
-                if scan_folders is not None
-                else {}
-            )
 
             spotify = spotify_converter.open_spotify()
             playlist = spotify_converter.fetch_playlist(spotify, url)
@@ -270,7 +266,7 @@ class UmupyApi:
                     self._spotify_status["processed"] += 1
 
                     if video:
-                        video["duplicate"] = video["id"] in index or track["spotify_id"] in spotify_index
+                        video["duplicate"] = index.contains("spotify", track["spotify_id"])
                         video["source"] = source
                         self._spotify_status["matched"].append(video)
                     else:

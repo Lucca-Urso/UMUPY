@@ -9,6 +9,7 @@ import pytest
 
 import app
 import history
+import library
 import spotify_converter
 import sync_playlists
 import yt_downloader
@@ -39,8 +40,8 @@ def test_scan_paths_and_index(api, project_dir, monkeypatch):
     assert api._scan_paths(["__all__", "x"]) == [downloads]
     assert api._scan_paths(["A"]) == [os.path.join(downloads, "A")]
 
-    assert api._build_scan_index(None) == {}
-    monkeypatch.setattr(yt_downloader, "build_library_index", lambda paths: {"paths": paths})
+    assert len(api._build_scan_index(None)) == 0
+    monkeypatch.setattr(library, "build_index", lambda paths: {"paths": paths})
     assert api._build_scan_index(["A"]) == {"paths": [os.path.join(downloads, "A")]}
 
 
@@ -52,16 +53,23 @@ def test_list_download_folders(api, project_dir):
     assert api.list_download_folders() == ["A", "B"]
 
 
+def fake_index(youtube=(), spotify=(), soundcloud=()):
+    files = [{"path": f"/y/{v}.mp3", "youtube_id": v, "spotify_id": None, "soundcloud_id": None} for v in youtube]
+    files += [{"path": f"/s/{v}.mp3", "youtube_id": None, "spotify_id": v, "soundcloud_id": None} for v in spotify]
+    files += [{"path": f"/c/{v}.mp3", "youtube_id": None, "spotify_id": None, "soundcloud_id": v} for v in soundcloud]
+    return library.LibraryIndex(files)
+
+
 def test_analyze_url_marks_duplicates(api, monkeypatch):
     monkeypatch.setattr(yt_downloader, "detect_playlist", lambda *_: "Mix")
-    monkeypatch.setattr(yt_downloader, "extract_videos", lambda *_: [dict(VIDEO), {**VIDEO, "id": "v2"}])
-    monkeypatch.setattr(yt_downloader, "build_library_index", lambda _: {"v2": "p"})
+    monkeypatch.setattr(yt_downloader, "extract_videos", lambda *_: [dict(VIDEO), {**VIDEO, "id": "v2"}, {**VIDEO, "id": "v3"}])
+    monkeypatch.setattr(library, "build_index", lambda _: fake_index(youtube=["v2"], spotify=["v3"]))
     monkeypatch.setattr(yt_downloader, "find_ffmpeg", lambda: "/bin/ffmpeg")
 
     result = api.analyze_url("url", ["__all__"])
 
     assert result["playlist"] == "Mix"
-    assert [v["duplicate"] for v in result["videos"]] == [False, True]
+    assert [v["duplicate"] for v in result["videos"]] == [False, True, False]
     assert result["error"] is None
     assert result["ffmpeg"] is True
 
@@ -167,8 +175,7 @@ def test_spotify_worker_matches_and_marks_duplicates(api, project_dir, monkeypat
         "s3": {"id": "yt3", "title": "C", "url": "u"},
     }
     prepare_spotify(monkeypatch, [spotify_track(s) for s in videos], lambda _, t: videos[t["spotify_id"]])
-    monkeypatch.setattr(yt_downloader, "build_library_index", lambda _: {"yt1": "p"})
-    monkeypatch.setattr(spotify_converter, "build_spotify_index", lambda _: {"s3": "p"})
+    monkeypatch.setattr(library, "build_index", lambda _: fake_index(youtube=["yt1"], spotify=["s3"]))
 
     api.start_spotify_analysis("url", ["__all__"])
     status = api.get_spotify_status()
@@ -176,7 +183,7 @@ def test_spotify_worker_matches_and_marks_duplicates(api, project_dir, monkeypat
     assert status["running"] is False
     assert status["playlist"] == "Mix"
     assert status["processed"] == 3
-    assert [v["duplicate"] for v in status["matched"]] == [True, True]
+    assert [v["duplicate"] for v in status["matched"]] == [False, True]
     assert status["matched"][0]["source"] == {"title": "Song", "artists": ["Artist"]}
     assert len(status["unmatched"]) == 1
     assert history.list_runs()[0]["status"] == "completed"

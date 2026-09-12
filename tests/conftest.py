@@ -63,6 +63,17 @@ def make_mp3(tmp_path, sample_mp3_bytes):
     return _make
 
 
+@pytest.fixture(autouse=True)
+def block_real_subprocess(request, monkeypatch, sample_mp3_bytes):
+    if "fake_run" in request.fixturenames or "commands" in request.fixturenames:
+        return
+
+    def guard(command, *args, **kwargs):
+        raise AssertionError(f"Unmocked subprocess.run call: {list(command)[:3]}")
+
+    monkeypatch.setattr(subprocess, "run", guard)
+
+
 @pytest.fixture
 def project_dir(tmp_path, monkeypatch):
     import history
