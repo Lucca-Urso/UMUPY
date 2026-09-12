@@ -56,12 +56,12 @@ def test_bundled_binaries_take_precedence(project_dir, monkeypatch, tmp_path):
     assert yt_downloader.deno_arguments() == ["--js-runtimes", f"deno:{tmp_path / 'bin' / 'deno'}"]
 
     monkeypatch.delattr(sys, "frozen", raising=False)
-    (tmp_path / "bin" / "ffmpeg").unlink()
-    (tmp_path / "bin" / "deno").unlink()
+    assert yt_downloader.bundled_binary_directories()[-1].endswith("bin")
+
+    monkeypatch.setattr(yt_downloader, "bundled_binary_directories", lambda: [str(tmp_path / "empty")])
     assert yt_downloader.find_ffmpeg() is None
     assert yt_downloader.find_deno() is None
     assert yt_downloader.deno_arguments() == []
-    assert yt_downloader.bundled_binary_directories()[-1].endswith("bin")
 
 
 def test_available_browsers_per_platform(monkeypatch):

@@ -32,14 +32,19 @@ def test_project_directory_not_frozen(monkeypatch):
     assert yt_downloader.yt_dlp_command() == [sys.executable, "-m", "yt_dlp"]
 
 
-def test_find_ffmpeg_prefers_path(monkeypatch, project_dir):
+@pytest.fixture
+def only_dependencies_directory(project_dir, monkeypatch):
+    monkeypatch.setattr(yt_downloader, "bundled_binary_directories", lambda: [str(project_dir / "Dependencies")])
+
+
+def test_find_ffmpeg_uses_path_when_nothing_is_bundled(monkeypatch, only_dependencies_directory):
     monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/ffmpeg")
 
     assert yt_downloader.find_ffmpeg() == "/usr/bin/ffmpeg"
 
 
-def test_find_ffmpeg_falls_back_to_dependencies(monkeypatch, project_dir):
-    monkeypatch.setattr(shutil, "which", lambda _: None)
+def test_find_ffmpeg_prefers_dependencies_over_path(monkeypatch, project_dir, only_dependencies_directory):
+    monkeypatch.setattr(shutil, "which", lambda _: "/usr/bin/ffmpeg.exe")
     monkeypatch.setattr(platform, "system", lambda: "Windows")
     dependencies = project_dir / "Dependencies"
     dependencies.mkdir()
@@ -48,7 +53,7 @@ def test_find_ffmpeg_falls_back_to_dependencies(monkeypatch, project_dir):
     assert yt_downloader.find_ffmpeg() == str(dependencies / "ffmpeg.exe")
 
 
-def test_find_ffmpeg_missing(monkeypatch, project_dir):
+def test_find_ffmpeg_missing(monkeypatch, only_dependencies_directory):
     monkeypatch.setattr(shutil, "which", lambda _: None)
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
 

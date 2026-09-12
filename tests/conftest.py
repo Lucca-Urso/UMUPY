@@ -1,5 +1,4 @@
 import os
-import shutil
 import subprocess
 import sys
 
@@ -9,15 +8,23 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_DIR)
 sys.path.insert(0, os.path.join(PROJECT_DIR, "Features"))
 
+REAL_RUN = subprocess.run
+
+
+def locate_ffmpeg():
+    import yt_downloader
+
+    return yt_downloader.find_ffmpeg()
+
 
 @pytest.fixture(scope="session")
 def sample_mp3_bytes():
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = locate_ffmpeg()
 
     if not ffmpeg:
-        pytest.skip("ffmpeg is required to build the sample MP3 fixture")
+        pytest.skip("ffmpeg is required to build the sample MP3 fixture (install it or place it in Dependencies/)")
 
-    result = subprocess.run(
+    result = REAL_RUN(
         [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
          "-t", "0.2", "-codec:a", "libmp3lame", "-b:a", "32k", "-f", "mp3", "pipe:1"],
         capture_output=True,
@@ -64,7 +71,7 @@ def make_mp3(tmp_path, sample_mp3_bytes):
 
 
 @pytest.fixture(autouse=True)
-def block_real_subprocess(request, monkeypatch, sample_mp3_bytes):
+def block_real_subprocess(request, monkeypatch):
     if "fake_run" in request.fixturenames or "commands" in request.fixturenames:
         return
 
