@@ -546,6 +546,7 @@ def test_main_dev_mode(monkeypatch):
 
     assert calls["args"][1] == "http://localhost:5173"
     assert calls["start"] == {"debug": True}
+    assert calls["kwargs"]["text_select"] is True
     assert isinstance(calls["kwargs"]["js_api"], UmupyApi)
 
 

@@ -604,6 +604,7 @@ def main():
         height=760,
         min_size=(900, 620),
         background_color="#09090b",
+        text_select=True,
     )
     webview.start(debug=dev_mode)
 
