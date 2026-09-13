@@ -146,6 +146,26 @@ def test_download_worker_logs_pause_and_fallback(api, project_dir, monkeypatch):
     assert detail["items"][4]["detail"] == "https://sc/1 via soundcloud"
 
 
+def test_download_status_updates_even_if_history_fails(api, project_dir, monkeypatch, capsys):
+    monkeypatch.setattr(yt_downloader, "download_video", lambda *a, **k: (0, None))
+    real_log = history.log_item
+
+    def flaky_log(run_id, title, *args, **kwargs):
+        if title == "Song":
+            raise RuntimeError("database is locked")
+
+        return real_log(run_id, title, *args, **kwargs)
+
+    monkeypatch.setattr(history, "log_item", flaky_log)
+
+    api.start_download([VIDEO])
+    status = api.get_status()
+
+    assert [item["ok"] for item in status["items"]] == [True]
+    assert status["running"] is False
+    assert "Could not write history" in capsys.readouterr().err
+
+
 def test_download_worker_unknown_operation_label(api, project_dir, monkeypatch):
     monkeypatch.setattr(yt_downloader, "find_ffmpeg", lambda: "/bin/ffmpeg")
     monkeypatch.setattr(yt_downloader, "download_video", lambda *a, **k: (0, None))

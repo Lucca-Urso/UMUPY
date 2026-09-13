@@ -1,4 +1,5 @@
 import os
+import sys
 
 import download_engine
 import history
@@ -149,25 +150,32 @@ class DownloaderApi:
     def _run_engine(self, videos, output_directory, run_id, on_finished=None):
         status = self._download
 
+        def record(*args, **kwargs):
+            try:
+                history.log_item(run_id, *args, **kwargs)
+            except Exception as error:
+                print(f"[WARNING] Could not write history: {error}", file=sys.stderr)
+
         def on_event(kind, payload):
             if kind == "finished":
-                history.log_item(
-                    run_id, payload["title"], "ok" if payload["ok"] else "failed",
-                    detail=f"{payload['url']} via {payload['provider']}", error=payload["error"],
-                )
                 status.append("items", dict(payload))
 
                 if on_finished:
                     on_finished(payload)
+
+                record(
+                    payload["title"], "ok" if payload["ok"] else "failed",
+                    detail=f"{payload['url']} via {payload['provider']}", error=payload["error"],
+                )
             elif kind == "attempt":
                 label = {"error": "failed"}.get(payload["status"], payload["status"])
-                history.log_item(
-                    run_id, payload["track"]["title"], label,
+                record(
+                    payload["track"]["title"], label,
                     detail=f"{payload['status']} on {payload['provider']}", error=payload.get("error"),
                 )
             elif kind == "paused":
-                history.log_item(
-                    run_id, "Downloads paused", "paused",
+                record(
+                    "Downloads paused", "paused",
                     detail=f"waiting {payload['seconds']}s after a rate limit or bot check", error=payload["reason"],
                 )
 

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { call } from '../api'
 import { Button, Card, Spinner, StatusIcon } from './ui'
+import { useSteadyInterval } from '../hooks/useSteadyInterval'
 
 export default function DownloadRunner({
   videos,
@@ -15,8 +16,8 @@ export default function DownloadRunner({
 }) {
   const [status, setStatus] = useState(null)
   const [outputDir, setOutputDir] = useState(null)
+  const [started, setStarted] = useState(false)
   const [done, setDone] = useState(false)
-  const pollRef = useRef(null)
 
   useEffect(() => {
     let cancelled = false
@@ -24,21 +25,25 @@ export default function DownloadRunner({
       const dir = starter ? await starter() : await call('start_download', videos, playlistName, operation, outputDirectory)
       if (cancelled) return
       setOutputDir(typeof dir === 'string' ? dir : dir?.error || null)
-      pollRef.current = setInterval(async () => {
-        const s = await call('get_status')
-        setStatus(s)
-        if (!s.running && s.items.length >= videos.length) {
-          clearInterval(pollRef.current)
-          setDone(true)
-          if (onDone) onDone(s)
-        }
-      }, 800)
+      setStarted(true)
     })()
     return () => {
       cancelled = true
-      clearInterval(pollRef.current)
     }
   }, [])
+
+  useSteadyInterval(
+    async () => {
+      const s = await call('get_status')
+      setStatus(s)
+      if (!s.running && s.items.length >= videos.length) {
+        setDone(true)
+        if (onDone) onDone(s)
+      }
+    },
+    800,
+    started && !done,
+  )
 
   if (done && status) {
     const failed = status.items.filter((i) => !i.ok)

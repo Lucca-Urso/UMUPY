@@ -396,7 +396,7 @@ def download_video(video, output_directory, output_template, script_directory, f
     if getattr(sys, "frozen", False):
         post_download_command = f'"{sys.executable}" --fix-artwork {arguments}'
     else:
-        post_download_command = f'{sys.executable} "{fix_artwork_script}" {arguments}'
+        post_download_command = f'"{sys.executable}" "{fix_artwork_script}" {arguments}'
 
     images_before = list_image_files(output_directory)
 

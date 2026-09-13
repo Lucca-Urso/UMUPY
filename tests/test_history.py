@@ -73,3 +73,34 @@ def test_list_runs_orders_newest_first_and_limits(project_dir, monkeypatch):
     runs = history.list_runs()
     assert [run["id"] for run in runs] == [second, first]
     assert len(history.list_runs(limit=1)) == 1
+
+
+def test_concurrent_writes_from_threads(project_dir):
+    import threading
+
+    run_id = history.start_run("youtube_download", total=30)
+    errors = []
+
+    def writer(index):
+        try:
+            history.log_item(run_id, f"Track {index}", "ok")
+        except Exception as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(30)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    history.finish_run(run_id)
+
+    assert errors == []
+    assert len(history.get_run(run_id)["items"]) == 30
+    assert history.list_runs()[0]["succeeded"] == 30
+
+
+def test_schema_is_recreated_when_database_file_disappears(project_dir):
+    history.start_run("a")
+    os.remove(history.get_database_path())
+
+    run_id = history.start_run("b")
+
+    assert history.get_run(run_id)["run"]["operation"] == "b"

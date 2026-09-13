@@ -1,7 +1,11 @@
 import os
 import sqlite3
+import threading
 import uuid
 from datetime import datetime
+
+_WRITE_LOCK = threading.RLock()
+_INITIALIZED = set()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -54,9 +58,16 @@ def get_database_path():
 
 
 def _connect():
-    connection = sqlite3.connect(get_database_path())
+    path = get_database_path()
+    existed = os.path.isfile(path)
+    connection = sqlite3.connect(path, timeout=30)
     connection.row_factory = sqlite3.Row
-    connection.executescript(SCHEMA)
+
+    if not existed or path not in _INITIALIZED:
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.executescript(SCHEMA)
+        _INITIALIZED.add(path)
+
     return connection
 
 
@@ -71,79 +82,84 @@ def _log_file_path(run):
 
 
 def _append_log(run_id, message):
-    connection = _connect()
+    with _WRITE_LOCK:
+        connection = _connect()
 
-    try:
-        run = connection.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
-    finally:
-        connection.close()
+        try:
+            run = connection.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+        finally:
+            connection.close()
 
-    if run is None:
-        return
+        if run is None:
+            return
 
-    with open(_log_file_path(run), "a", encoding="utf-8") as log_file:
-        log_file.write(f"[{_now()}] {message}\n")
+        with open(_log_file_path(run), "a", encoding="utf-8") as log_file:
+            log_file.write(f"[{_now()}] {message}\n")
 
 
 def start_run(operation, target=None, total=0):
     run_id = uuid.uuid4().hex
-    connection = _connect()
 
-    try:
-        connection.execute(
-            "INSERT INTO runs (id, operation, target, started_at, status, total) VALUES (?, ?, ?, ?, ?, ?)",
-            (run_id, operation, target, _now(), "running", total),
-        )
-        connection.commit()
-    finally:
-        connection.close()
+    with _WRITE_LOCK:
+        connection = _connect()
 
-    _append_log(run_id, f"RUN START operation={operation} target={target} total={total}")
+        try:
+            connection.execute(
+                "INSERT INTO runs (id, operation, target, started_at, status, total) VALUES (?, ?, ?, ?, ?, ?)",
+                (run_id, operation, target, _now(), "running", total),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        _append_log(run_id, f"RUN START operation={operation} target={target} total={total}")
 
     return run_id
 
 
 def log_item(run_id, title, status, detail=None, error=None):
-    connection = _connect()
+    with _WRITE_LOCK:
+        connection = _connect()
 
-    try:
-        connection.execute(
-            "INSERT INTO run_items (run_id, title, detail, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (run_id, title, detail, status, error, _now()),
-        )
-        connection.commit()
-    finally:
-        connection.close()
+        try:
+            connection.execute(
+                "INSERT INTO run_items (run_id, title, detail, status, error, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (run_id, title, detail, status, error, _now()),
+            )
+            connection.commit()
+        finally:
+            connection.close()
 
-    line = f"{status.upper()} {title}"
+        line = f"{status.upper()} {title}"
 
-    if detail:
-        line += f" | {detail}"
+        if detail:
+            line += f" | {detail}"
 
-    if error:
-        line += f" | {error}"
+        if error:
+            line += f" | {error}"
 
-    _append_log(run_id, line)
+        _append_log(run_id, line)
 
 
 def finish_run(run_id, status="completed"):
-    connection = _connect()
+    with _WRITE_LOCK:
+        connection = _connect()
 
-    try:
-        connection.execute(
-            "UPDATE runs SET finished_at = ?, status = ? WHERE id = ?",
-            (_now(), status, run_id),
-        )
-        connection.commit()
-        counts = connection.execute(
-            "SELECT status, COUNT(*) AS n FROM run_items WHERE run_id = ? GROUP BY status",
-            (run_id,),
-        ).fetchall()
-    finally:
-        connection.close()
+        try:
+            connection.execute(
+                "UPDATE runs SET finished_at = ?, status = ? WHERE id = ?",
+                (_now(), status, run_id),
+            )
+            connection.commit()
+            counts = connection.execute(
+                "SELECT status, COUNT(*) AS n FROM run_items WHERE run_id = ? GROUP BY status",
+                (run_id,),
+            ).fetchall()
+        finally:
+            connection.close()
 
-    summary = " ".join(f"{row['status']}={row['n']}" for row in counts)
-    _append_log(run_id, f"RUN END status={status} {summary}".strip())
+        summary = " ".join(f"{row['status']}={row['n']}" for row in counts)
+        _append_log(run_id, f"RUN END status={status} {summary}".strip())
 
 
 def list_runs(limit=50):
