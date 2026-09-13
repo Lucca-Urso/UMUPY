@@ -47,25 +47,40 @@ export default function DownloadRunner({
 
   if (done && status) {
     const failed = status.items.filter((i) => !i.ok)
+    const succeeded = status.items.filter((i) => i.ok)
     return (
       <div className="flex flex-col gap-5">
         <div className="flex flex-col items-center py-8 text-center">
           <StatusIcon ok={!failed.length} />
           <h2 className="mt-4 text-xl font-semibold text-white">
-            {status.items.filter((i) => i.ok).length} of {status.total} tracks downloaded
+            {succeeded.length} of {status.total} tracks downloaded
           </h2>
           <p className="mt-1 text-[13px] text-zinc-500">{outputDir}</p>
         </div>
 
         {failed.length > 0 && (
-          <Card className="max-h-[280px] overflow-y-auto">
+          <Card className="max-h-[240px] overflow-y-auto">
             <div className="border-b border-white/[0.06] px-5 py-3 text-[13px] font-medium text-[#ff6961]">
               Failed downloads
             </div>
-            {failed.map((item) => (
-              <div key={item.id} className="border-t border-white/[0.05] px-5 py-3 first:border-t-0">
+            {failed.map((item, index) => (
+              <div key={`${item.id}-${index}`} className="border-t border-white/[0.05] px-5 py-3 first:border-t-0">
                 <p className="truncate text-sm text-zinc-300">{item.title}</p>
                 <p className="truncate text-xs text-zinc-600">{item.url}</p>
+                {item.error && <p className="mt-0.5 break-words text-xs text-[#ff6961]">{item.error}</p>}
+              </div>
+            ))}
+          </Card>
+        )}
+
+        {succeeded.length > 0 && (
+          <Card className="max-h-[280px] overflow-y-auto">
+            <div className="border-b border-white/[0.06] px-5 py-3 text-[13px] font-medium text-zinc-300">Downloaded</div>
+            {succeeded.map((item, index) => (
+              <div key={`${item.id}-${index}`} className="flex items-center gap-4 border-t border-white/[0.05] px-5 py-3 first:border-t-0">
+                <StatusIcon ok />
+                <span className="flex-1 truncate text-sm text-zinc-300">{item.title}</span>
+                <span className="shrink-0 text-[11px] text-zinc-600">{item.provider}</span>
               </div>
             ))}
           </Card>
@@ -103,8 +118,8 @@ export default function DownloadRunner({
         )}
         {status?.active?.length > 0 && (
           <div className="mt-4 flex flex-col gap-2">
-            {status.active.map((item) => (
-              <p key={item.id} className="flex items-center gap-2.5 text-sm text-zinc-400">
+            {status.active.map((item, index) => (
+              <p key={`${item.id}-${index}`} className="flex items-center gap-2.5 text-sm text-zinc-400">
                 <Spinner className="h-4 w-4" />
                 <span className="truncate">
                   {item.retrying ? `Retrying on ${item.provider}: ` : ''}
@@ -120,7 +135,7 @@ export default function DownloadRunner({
         <Card className="max-h-[340px] overflow-y-auto">
           {[...status.items].reverse().map((item, index) => (
             <div
-              key={item.id}
+              key={`${item.id}-${index}`}
               className={`flex items-center gap-4 px-5 py-3 ${index > 0 ? 'border-t border-white/[0.05]' : ''}`}
             >
               <StatusIcon ok={item.ok} />
