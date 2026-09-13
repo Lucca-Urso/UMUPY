@@ -31,7 +31,7 @@ export default function TrackList({ tracks, checked, onToggle, keyOf = (t) => t.
             <ProviderBadge provider={track.source} />
             {track.duplicate && (
               <span className="shrink-0 rounded-full bg-[#ff9f0a]/15 px-2.5 py-0.5 text-[11px] font-medium text-[#ff9f0a]">
-                Duplicate
+                In library
               </span>
             )}
           </div>

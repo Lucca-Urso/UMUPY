@@ -17,6 +17,7 @@ export default function Downloader({ onBack, onSetup }) {
   const [selectedFolders, setSelectedFolders] = useState(new Set(['__all__']))
   const checked = useSetToggle()
   const [error, setError] = useState(null)
+  const [showDuplicates, setShowDuplicates] = useState(false)
   const [spotify] = useSpotifyReady()
   const [status] = usePolling('get_analysis_status', step === 'analyzing')
   const tutorial = useTutorial()
@@ -51,6 +52,9 @@ export default function Downloader({ onBack, onSetup }) {
   }
 
   const operation = validLinks.every((l) => detectProvider(l) === 'youtube') ? 'youtube' : 'spotify'
+  const fresh = status?.matched.filter((v) => !v.duplicate) ?? []
+  const duplicates = status?.matched.filter((v) => v.duplicate) ?? []
+  const duplicateIds = new Set(duplicates.map((v) => v.id))
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-8 pb-12">
@@ -116,13 +120,41 @@ export default function Downloader({ onBack, onSetup }) {
           <SelectionHeader
             title={status.playlist}
             subtitle={`${checked.size} of ${status.matched.length} tracks selected${
-              status.unmatched.length ? ` · ${status.unmatched.length} not found` : ''
-            }`}
-            onSelectAll={() => checked.replace(status.matched.map((v) => v.id))}
+              duplicates.length ? ` · ${duplicates.length} already in your library` : ''
+            }${status.unmatched.length ? ` · ${status.unmatched.length} not found` : ''}`}
+            onSelectAll={() => checked.replace(fresh.map((v) => v.id))}
             onClear={checked.clear}
           />
 
-          <TrackList tracks={status.matched} checked={checked.selected} onToggle={checked.toggle} />
+          {fresh.length > 0 ? (
+            <TrackList tracks={fresh} checked={checked.selected} onToggle={checked.toggle} maxHeight={duplicates.length ? '300px' : '420px'} />
+          ) : (
+            <Notice tone="info">Every track is already in your library.</Notice>
+          )}
+
+          {duplicates.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <button onClick={() => setShowDuplicates((v) => !v)} className="text-[13px] font-medium text-[#ff9f0a] hover:underline">
+                  {showDuplicates ? 'Hide' : 'Show'} {duplicates.length} already in your library
+                </button>
+                {showDuplicates && (
+                  <div className="flex gap-2 text-xs">
+                    <button onClick={() => checked.replace([...checked.selected, ...duplicates.map((v) => v.id)])} className="text-[#0a84ff] hover:underline">
+                      Download again
+                    </button>
+                    <span className="text-zinc-700">·</span>
+                    <button onClick={() => checked.replace([...checked.selected].filter((id) => !duplicateIds.has(id)))} className="text-[#0a84ff] hover:underline">
+                      Skip all
+                    </button>
+                  </div>
+                )}
+              </div>
+              {showDuplicates && (
+                <TrackList tracks={duplicates} checked={checked.selected} onToggle={checked.toggle} maxHeight="220px" />
+              )}
+            </div>
+          )}
 
           {status.unmatched.length > 0 && (
             <Card className="max-h-[180px] overflow-y-auto">
