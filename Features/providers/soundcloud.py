@@ -38,10 +38,17 @@ def entry_to_track(entry):
     )
 
 
+def list_entries(url):
+    entries, stderr, _ = ytdlp.dump_json(["--flat-playlist", "--ignore-no-formats-error"], url)
+    children = [entry for entry in entries if entry.get("_type") == "url" or entry.get("playlist_title")]
+    name = next((entry.get("playlist_title") for entry in children if entry.get("playlist_title")), None)
+    urls = [entry.get("url") for entry in children if entry.get("url")]
+    singles = [entry for entry in entries if entry not in children and entry.get("id")]
+    return name, urls, singles, stderr
+
+
 def list_playlist_urls(url):
-    entries, stderr, _ = ytdlp.dump_json(["--flat-playlist"], url)
-    name = next((entry.get("playlist_title") for entry in entries if entry.get("playlist_title")), None)
-    urls = [entry.get("url") for entry in entries if entry.get("url")]
+    name, urls, _, stderr = list_entries(url)
     return name, urls, stderr
 
 
@@ -83,16 +90,12 @@ def placeholder_track(url, stderr):
 
 
 def resolve(url):
-    if not is_playlist(url):
-        entries, stderr, _ = ytdlp.dump_json(["--simulate", "--no-playlist"], url)
-        tracks = [entry_to_track(entry) for entry in entries if entry.get("id")]
-        error = None if tracks else ytdlp.error_summary(stderr)
-        return {"name": None, "tracks": tracks, "error": error}
-
-    name, urls, stderr = list_playlist_urls(url)
+    name, urls, singles, stderr = list_entries(url)
 
     if not urls:
-        return {"name": name, "tracks": [], "error": ytdlp.error_summary(stderr)}
+        tracks = [entry_to_track(entry) for entry in singles]
+        error = None if tracks else ytdlp.error_summary(stderr)
+        return {"name": None, "tracks": tracks, "error": error}
 
     ranges = [(start, min(start + METADATA_BATCH - 1, len(urls))) for start in range(1, len(urls) + 1, METADATA_BATCH)]
 

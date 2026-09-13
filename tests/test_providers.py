@@ -156,6 +156,24 @@ def test_soundcloud_entry_to_track():
     assert soundcloud.entry_to_track({"id": 2, "title": "T"})["duration"] is None
 
 
+def test_soundcloud_short_link_is_resolved_by_content(monkeypatch):
+    def dump_json(args, url):
+        if "--flat-playlist" in args:
+            return ([{"_type": "url", "id": "9", "url": "https://soundcloud.com/x/y", "playlist_title": "Groovy"}], "", 0)
+
+        return ([sc_entry(9, "Y", url="https://soundcloud.com/x/y")], "", 0)
+
+    monkeypatch.setattr(ytdlp, "dump_json", dump_json)
+
+    result = soundcloud.resolve("https://on.soundcloud.com/abc")
+
+    assert result["name"] == "Groovy"
+    assert [t["title"] for t in result["tracks"]] == ["Y"]
+
+    name, urls, stderr = soundcloud.list_playlist_urls("https://on.soundcloud.com/abc")
+    assert (name, urls, stderr) == ("Groovy", ["https://soundcloud.com/x/y"], "")
+
+
 def test_soundcloud_resolve_single_track(monkeypatch):
     monkeypatch.setattr(ytdlp, "dump_json", lambda args, url: ([sc_entry(293, "Flickermood")], "", 0))
 
@@ -216,10 +234,10 @@ def test_soundcloud_resolve_set_keeps_unavailable_tracks(monkeypatch):
     def dump_json(args, url):
         if "--flat-playlist" in args:
             return ([
-                {"id": "1", "url": "https://soundcloud.com/a/first-song", "playlist_title": "S"},
-                {"id": "2", "url": "https://api-v2.soundcloud.com/tracks/2"},
-                {"id": "3", "url": "https://api-v2.soundcloud.com/tracks/3"},
-                {"id": "4", "url": "https://soundcloud.com/b/bodies-ivory-it-remix"},
+                {"id": "1", "url": "https://soundcloud.com/a/first-song", "playlist_title": "S", "_type": "url"},
+                {"id": "2", "url": "https://api-v2.soundcloud.com/tracks/2", "_type": "url"},
+                {"id": "3", "url": "https://api-v2.soundcloud.com/tracks/3", "_type": "url"},
+                {"id": "4", "url": "https://soundcloud.com/b/bodies-ivory-it-remix", "_type": "url"},
             ], "", 0)
 
         entries = [sc_entry(1, "First Song", url="https://soundcloud.com/a/first-song")]
