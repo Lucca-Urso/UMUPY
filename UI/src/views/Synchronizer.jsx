@@ -3,7 +3,6 @@ import { call } from '../api'
 import { Button, Card, Checkbox, ErrorBox, Notice, PageHeader, ProgressCard, Spinner, StatusIcon } from '../components/ui'
 import LinkList, { detectProvider } from '../components/LinkList'
 import TrackList from '../components/TrackList'
-import ScanFolders from '../components/ScanFolders'
 import DownloadRunner from '../components/DownloadRunner'
 import RekordboxPlan from '../components/RekordboxPlan'
 import Tutorial, { TutorialButton, useTutorial } from '../components/Tutorial'
@@ -40,6 +39,24 @@ function Choice({ options, value, onChange }) {
   )
 }
 
+function ListControls({ count, label = 'selected', onSelectAll, onClear }) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="text-zinc-500">
+        {count} {label}
+      </span>
+      <span className="text-zinc-700">·</span>
+      <button onClick={onSelectAll} className="text-[#0a84ff] hover:underline">
+        Select all
+      </button>
+      <span className="text-zinc-700">·</span>
+      <button onClick={onClear} className="text-[#0a84ff] hover:underline">
+        Clear
+      </button>
+    </div>
+  )
+}
+
 function FolderPicker({ folder, onPick, hint }) {
   return (
     <Card className="p-6">
@@ -60,8 +77,6 @@ export default function Synchronizer({ onBack, onSetup }) {
   const [source, setSource] = useState(null)
   const [links, setLinks] = useState([''])
   const [folder, setFolder] = useState(null)
-  const [scanEnabled, setScanEnabled] = useState(false)
-  const [selectedFolders, setSelectedFolders] = useState(new Set(['__all__']))
   const [spotify] = useSpotifyReady()
   const [error, setError] = useState(null)
   const orphans = useSetToggle()
@@ -114,8 +129,7 @@ export default function Synchronizer({ onBack, onSetup }) {
     if (fromProviders) {
       setStep('analyzing')
       setSync(null)
-      const scan = !toRekordbox && scanEnabled ? [...selectedFolders] : null
-      await call('start_chain', validLinks, folder, scan)
+      await call('start_chain', validLinks, folder, null)
     } else {
       setStep('loading')
       const result = await call('rekordbox_sync_plan', folder, null)
@@ -223,15 +237,6 @@ export default function Synchronizer({ onBack, onSetup }) {
             hint={fromProviders ? 'Optional · defaults to Downloads/<playlist name>' : 'Required'}
           />
 
-          {fromProviders && !toRekordbox && (
-            <ScanFolders
-              enabled={scanEnabled}
-              onEnabledChange={setScanEnabled}
-              selection={selectedFolders}
-              onSelectionChange={setSelectedFolders}
-            />
-          )}
-
           <ErrorBox>{error}</ErrorBox>
 
           <div className="flex items-center justify-between">
@@ -291,7 +296,11 @@ export default function Synchronizer({ onBack, onSetup }) {
             <Card className="overflow-hidden">
               <div className="flex items-center justify-between border-b border-white/[0.06] px-5 py-3">
                 <span className="text-[13px] font-medium text-zinc-200">Local files not in the playlist</span>
-                <span className="text-xs text-zinc-500">{orphans.size} selected</span>
+                <ListControls
+                  count={orphans.size}
+                  onSelectAll={() => orphans.replace(sync.orphans.map((o) => o.path))}
+                  onClear={orphans.clear}
+                />
               </div>
               <div className="max-h-[220px] overflow-y-auto">
                 {sync.orphans.map((orphan) => {
@@ -328,7 +337,12 @@ export default function Synchronizer({ onBack, onSetup }) {
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <span className="text-[13px] font-medium text-zinc-200">Missing locally</span>
-                <span className="text-xs text-zinc-500">{missing.size} selected to download</span>
+                <ListControls
+                  count={missing.size}
+                  label="selected to download"
+                  onSelectAll={() => missing.replace(missingWithVideo.map(missingKey))}
+                  onClear={missing.clear}
+                />
               </div>
               {missingWithVideo.length > 0 && (
                 <TrackList
